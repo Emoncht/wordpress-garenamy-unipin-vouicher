@@ -1,0 +1,12 @@
+Ping failed: Client network socket disconnected before secure TLS connection was established
+Ping failed: read ECONNRESET
+Ping successful: 200
+Ping successful: 200
+Ping successful: 200
+Ping failed: read ECONNRESET
+Ping failed: read ECONNRESET
+Ping failed: read ECONNRESET
+Ping failed: read ECONNRESET
+Ping failed: read ECONNRESET
+Ping successful: 200
+Ping successful: 200
