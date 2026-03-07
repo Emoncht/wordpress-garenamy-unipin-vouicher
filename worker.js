@@ -414,13 +414,7 @@ async function browserWorkerLoop(browserId) {
                             validated_uid: result.validated_uid
                         });
 
-                        if (status === 'failed') {
-                            voucher.status = 'Failed';
-                            voucher.reason = reason;
-                            voucher.retry_count = (voucher.retry_count || 0) + 1;
-                            voucher.failed_at = new Date();
-                            await sendFailureCallback(voucher, reason, result.screenshot_base64);
-                        } else if (status === 'Failed' && reason === 'Invalid Player ID') {
+                        if (status === 'failed' && reason && reason.includes('invalid_id')) {
                             voucher.retry_count = (voucher.retry_count || 0) + 1;
                             await logger.logInfo(voucher.order_id, 'Invalid Player ID detected. Sending callback and deleting order/vouchers', {
                                 voucher_id: voucher.id,
@@ -437,10 +431,16 @@ async function browserWorkerLoop(browserId) {
                                     order_id: voucher.order_id
                                 });
                                 voucher.status = 'Failed';
-                                voucher.reason = reason;
+                                voucher.reason = 'Invalid Player ID';
                                 voucher.retry_count = (voucher.retry_count || 0) + 1;
                                 voucher.failed_at = new Date();
                             }
+                        } else if (status === 'failed') {
+                            voucher.status = 'Failed';
+                            voucher.reason = reason;
+                            voucher.retry_count = (voucher.retry_count || 0) + 1;
+                            voucher.failed_at = new Date();
+                            await sendFailureCallback(voucher, reason, result.screenshot_base64);
                         } else {
                             voucher.status = status;
                             voucher.reason = reason;
