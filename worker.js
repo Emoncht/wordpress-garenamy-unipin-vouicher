@@ -48,7 +48,7 @@ async function claimNextVoucher(lastOrderId = null) {
     try {
         const now = Date.now();
         const isAvailable = (v) => {
-            if (v.retry_count >= 6) return false;
+            if (v.retry_count >= 5) return false;
             if (v.status === 'Pending') return true;
             if (v.status === 'Failed') {
                 const timeSinceFail = v.failed_at ? (now - new Date(v.failed_at).getTime()) : Number.MAX_SAFE_INTEGER;
@@ -417,9 +417,11 @@ async function browserWorkerLoop(browserId) {
                         if (status === 'failed') {
                             voucher.status = 'Failed';
                             voucher.reason = reason;
+                            voucher.retry_count = (voucher.retry_count || 0) + 1;
                             voucher.failed_at = new Date();
                             await sendFailureCallback(voucher, reason, result.screenshot_base64);
                         } else if (status === 'Failed' && reason === 'Invalid Player ID') {
+                            voucher.retry_count = (voucher.retry_count || 0) + 1;
                             await logger.logInfo(voucher.order_id, 'Invalid Player ID detected. Sending callback and deleting order/vouchers', {
                                 voucher_id: voucher.id,
                                 reason: reason
@@ -436,6 +438,7 @@ async function browserWorkerLoop(browserId) {
                                 });
                                 voucher.status = 'Failed';
                                 voucher.reason = reason;
+                                voucher.retry_count = (voucher.retry_count || 0) + 1;
                                 voucher.failed_at = new Date();
                             }
                         } else {

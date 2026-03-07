@@ -653,4 +653,4 @@ const paymentLink = async (playerId, proxy, orderId) => {
     });
 };
 
-module.exports = { paymentLink };
+module.exports = { paymentLink, invalidateCachedDatadome };

@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { paymentLink } = require("./paymentLink");
+const { paymentLink, invalidateCachedDatadome } = require("./paymentLink");
 const { processUnipinCheckout } = require('./unipinApi');
 const logger = require('./logger');
 const axios = require('axios');
@@ -147,9 +147,10 @@ async function runAutomation(voucher) {
 
             if (linkResult.error) {
                 if (linkResult.error === 'captcha_detected') {
+                    invalidateCachedDatadome(proxyKey); // Delete the poisoned datadome cookie!
                     setProxyCooldown(proxyKey); // Put this IP on 5-min cooldown
                     lastError = 'captcha_detected';
-                    await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Proxy flagged for 5 min cooldown. Trying next proxy.`);
+                    await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Token purged. Proxy flagged for 5 min cooldown. Trying next proxy.`);
                     continue;
                 }
                 throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);
