@@ -82,7 +82,7 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
         let match;
         let selectedDenomJson = null;
 
-        const targetDenomText = String(voucherDetails.denomination).toLowerCase();
+        const targetDenomText = String(voucherDetails.denomination).toLowerCase().trim();
 
         // For matching, the button text usually looks like "50 Diamond" which is inside a sibling span or label,
         // but the JSON string itself contains the name, e.g., {"name":"50 Diamond","amount":"36.0","amount_uc":"36.0","amount_up":36}
@@ -91,9 +91,33 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
                 // The value is HTML encoded (e.g. &quot;)
                 let decodedValue = match[1].replace(/&quot;/g, '"');
                 const parsed = JSON.parse(decodedValue);
-                if (parsed.name && parsed.name.toLowerCase().includes(targetDenomText) || targetDenomText.includes(parsed.name.toLowerCase())) {
-                    selectedDenomJson = decodedValue;
-                    break;
+                if (parsed.name) {
+                    const parsedName = parsed.name.toLowerCase().trim();
+
+                    // 1. Exact match
+                    if (parsedName === targetDenomText) {
+                        selectedDenomJson = decodedValue;
+                        console.log(`[UniPin API] => Exact match found for denomination: "${parsed.name}"`);
+                        break;
+                    }
+
+                    // 2. Exact Numeric match (prevents 240 matching 1240)
+                    const tNum = targetDenomText.match(/\d+/);
+                    const pNum = parsedName.match(/\d+/);
+                    if (tNum && pNum && tNum[0] === pNum[0]) {
+                        selectedDenomJson = decodedValue;
+                        console.log(`[UniPin API] => Numeric match found for denomination: "${parsed.name}"`);
+                        break;
+                    }
+
+                    // 3. Substring fallback for text-only (like Weekly Membership) if it hasn't matched a number
+                    if (!tNum && !pNum) {
+                        if (parsedName.includes(targetDenomText) || targetDenomText.includes(parsedName)) {
+                            selectedDenomJson = decodedValue;
+                            console.log(`[UniPin API] => Substring match found for denomination: "${parsed.name}"`);
+                            break;
+                        }
+                    }
                 }
             } catch (e) {
                 // Ignore parse errors for individual matches
@@ -136,7 +160,9 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
         const submitUrl = `https://www.unipin.com/unibox/c/${hash}/${paymentMethodId}`;
         const submitPayload = new URLSearchParams();
         submitPayload.append('_token', csrfToken);
-        submitPayload.append('serial', voucherDetails.serial.replace(/-/g, ''));
+
+        let finalSerial = voucherDetails.serial.replace(/[^A-Za-z0-9]/g, '');
+        submitPayload.append('serial', finalSerial);
         submitPayload.append('pin_1', voucherDetails.pinBlocks[0]);
         submitPayload.append('pin_2', voucherDetails.pinBlocks[1]);
         submitPayload.append('pin_3', voucherDetails.pinBlocks[2]);
@@ -159,13 +185,16 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
         const finalUrl = submitResponse.request.res.responseUrl || submitUrl;
         const finalHtml = submitResponse.data;
 
+        const errMatch = finalHtml.match(/<div class=["'][^"']*alert alert-danger[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+
         if (finalUrl.includes('/unibox/result/') || finalHtml.includes('Thank you') || finalHtml.includes('Transaction Successful')) {
             return { status: 'completed', reason: null };
         } else if (finalUrl.includes('error/Consumed') || finalHtml.includes('Consumed Voucher') || finalHtml.includes('already been used')) {
             return { status: 'consumed', reason: 'Voucher has already been consumed.' };
+        } else if (errMatch && errMatch[1]) {
+            const errMsg = errMatch[1].replace(/<[^>]+>/g, '').trim();
+            return { status: 'failed', reason: errMsg };
         } else if (finalUrl.includes('error') || finalHtml.includes('Invalid serial')) {
-            // Extract specific error message if possible
-            const errMatch = finalHtml.match(/<div class=["']alert alert-danger["'][^>]*>([\s\S]*?)<\/div>/i);
             const errMsg = errMatch ? errMatch[1].replace(/<[^>]+>/g, '').trim() : 'Unknown error during submission';
             return { status: 'failed', reason: errMsg };
         } else {
