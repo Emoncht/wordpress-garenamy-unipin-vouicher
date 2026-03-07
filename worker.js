@@ -302,7 +302,16 @@ async function checkRemoteOrderStatus(orderId, voucherCode) {
         if (error.response && error.response.status === 404) {
             return null;
         }
-        throw error;
+
+        // Don't crash processing if WP API fails, just log it and proceed normally
+        const errorDetails = {
+            status: error.response?.status,
+            data: error.response?.data,
+            message: error.message
+        };
+        await logger.logWarn(orderId, `checkRemoteOrderStatus WP API failed, continuing with topup normally.`, errorDetails);
+
+        return null;
     }
 }
 
@@ -341,7 +350,11 @@ async function sendProgressCallback(orderId, updatedVoucherId = null) {
             await logger.logInfo(orderId, 'Sent incremental progress update to WP', { voucher_id: updatedVoucherId });
         }
     } catch (error) {
-        console.error(`[Worker] Failed to send progress callback for ${orderId}:`, error.message);
+        await logger.logError(orderId, `Failed to send progress callback`, error, {
+            callback_url: order?.callbackUrl,
+            response_status: error.response?.status,
+            response_data: error.response?.data
+        });
     }
 }
 
