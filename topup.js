@@ -3,7 +3,7 @@ const { paymentLink } = require("./paymentLink");
 const { processUnipinCheckout } = require('./unipinApi');
 const logger = require('./logger');
 const axios = require('axios');
-const { orderRegistry, getNextTopupAllowedAt, setNextTopupAllowedAt } = require('./state');
+const { orderRegistry, getNextTopupAllowedAt, setNextTopupAllowedAt, isProxyOnCooldown, setProxyCooldown } = require('./state');
 
 const getProxies = () => {
     const proxyString = process.env.ROTATING_PROXIES;
@@ -102,6 +102,14 @@ async function runAutomation(voucher) {
     let lastError = null;
 
     for (const proxy of proxies) {
+        const proxyKey = proxy || 'no_proxy';
+
+        // Skip proxies that are on captcha cooldown
+        if (isProxyOnCooldown(proxyKey)) {
+            await logger.logWarn(orderId, `Proxy ${proxyKey} is on captcha cooldown. Skipping.`);
+            continue;
+        }
+
         // Enforce Rate Limit globally
         while (true) {
             const nextAllowedTime = getNextTopupAllowedAt();
@@ -135,12 +143,13 @@ async function runAutomation(voucher) {
             await logger.logInfo(orderId, `Generating payment link via API...`, { proxy: proxy || 'none' });
 
             // Step 1: Securely fetch Garena Payment Link URL
-            const linkResult = await paymentLink(voucher.uid, process.env.GARENA_SESSION_KEY, proxy, orderId);
+            const linkResult = await paymentLink(voucher.uid, proxy, orderId);
 
             if (linkResult.error) {
                 if (linkResult.error === 'captcha_detected') {
+                    setProxyCooldown(proxyKey); // Put this IP on 5-min cooldown
                     lastError = 'captcha_detected';
-                    await logger.logWarn(orderId, 'Captcha detected on Garena link gen. Retrying with next proxy.');
+                    await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Proxy flagged for 5 min cooldown. Trying next proxy.`);
                     continue;
                 }
                 throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);

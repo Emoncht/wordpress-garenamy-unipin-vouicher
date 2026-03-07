@@ -282,7 +282,7 @@ const datadomeTest = async (url, orderId, proxyKey = 'no_proxy') => {
  * @param {string} proxy The proxy server to use for the request.
  * @returns {Promise<{cookie: string, csrfToken: string, nickname: string}|null>} An object containing session details, or null on failure.
  */
-const getGarenaSession = async (playerId, sessionKey, proxy, orderId, _isRetryAfterCacheInvalidation = false) => {
+const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInvalidation = false) => {
     const loginUrl = 'https://shop.garena.my/api/auth/player_id_login';
     const proxyKey = proxy || 'no_proxy';
     console.log(`--- [1] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
@@ -292,11 +292,14 @@ const getGarenaSession = async (playerId, sessionKey, proxy, orderId, _isRetryAf
         await logger.logError(orderId, 'Stopping: Failed to generate DataDome cookie', null, { step: 'getGarenaSession' });
         return null;
     }
-    console.log(`--- [2] Attempting login for Player ID: ${playerId} with FULL headers... ---`);
+    console.log(`--- [2] Attempting login for Player ID: ${playerId}... ---`);
 
-    // Constructing the full cookie using the provided sessionKey and the new datadome cookie.
-    // All other parts are from your known-good example.
-    const fullCookie = `region=MY; mspid2=6b7d0b83c5b0a3508e4deb8351ca9b27; language=en; _fbp=fb.1.1748296723121.844993683299681294; _ga=GA1.1.239634397.1748296724; source=pc; datadome=${datadomeCookie}; session_key=${sessionKey}`;
+    // The session_key is NOT required for player_id_login.
+    // Garena generates a brand new session_key and returns it in the LOGIN RESPONSE set-cookie.
+    // Our code captures that response cookie and uses it for all subsequent API calls (CSRF, pay/init).
+    // We only need a valid DataDome cookie for the login request itself.
+    const fullCookie = `region=MY; language=en; source=pc; datadome=${datadomeCookie}`;
+
 
     const headers = {
         'Host': 'shop.garena.my',
@@ -356,7 +359,7 @@ const getGarenaSession = async (playerId, sessionKey, proxy, orderId, _isRetryAf
                 if (!_isRetryAfterCacheInvalidation) {
                     console.log('--- Invalidated DataDome cache. Retrying with fresh cookie... ---');
                     await logger.logWarn(orderId, 'Captcha detected, invalidating DataDome cache and retrying');
-                    return getGarenaSession(playerId, sessionKey, proxy, orderId, true);
+                    return getGarenaSession(playerId, proxy, orderId, true);
                 }
                 await logger.logWarn(orderId, 'Garena login captcha detected even after cache invalidation');
                 return { error: 'captcha_detected' };
@@ -518,10 +521,10 @@ const getCsrfToken = async (loginCookie, proxy, orderId) => {
     }
 };
 
-const paymentLink = async (playerId, sessionKey, proxy, orderId) => {
+const paymentLink = async (playerId, proxy, orderId) => {
     return withRetries(async () => {
         await logger.logInfo(orderId, 'paymentLink: start', { playerId, using_proxy: Boolean(proxy) });
-        const session = await getGarenaSession(playerId, sessionKey, proxy, orderId);
+        const session = await getGarenaSession(playerId, proxy, orderId);
 
         if (session && session.error === 'captcha_detected') {
             await logger.logWarn(orderId, 'paymentLink: captcha detected during session creation');
