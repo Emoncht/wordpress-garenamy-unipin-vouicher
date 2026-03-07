@@ -457,7 +457,7 @@ async function browserWorkerLoop(browserId) {
                 if (lastOrderId) {
                     lastOrderId = null;
                 }
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
         } catch (error) {
@@ -466,7 +466,7 @@ async function browserWorkerLoop(browserId) {
                 await logger.logError(lastOrderId, `Critical error in browser ${browserId} loop`, error, { browser_id: browserId });
                 lastOrderId = null;
             }
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 }
