@@ -123,25 +123,13 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
 
         cookies = extractCookies(denomResponse, cookies);
 
-        // Step 4: POST to submit Voucher (Payment Method ID: 659 for BDMB, wait, what is it for UPBD?)
-        // Let's deduce payment method based on voucher prefix
-        let paymentMethodId = '659'; // Default to BDMB based on our capture
+        // Step 4: POST to submit Voucher
+        let paymentMethodId = '659'; // Default to BDMB 'UniPin Voucher'
         const serialUpper = voucherDetails.serial.toUpperCase();
+
         if (serialUpper.includes('UPBD') || serialUpper.startsWith('UP')) {
-            paymentMethodId = '123'; // FIXME: We need to find the real ID for UP Gift Card. 
-            // Often it is dynamically found on the page. Let's try to extract it from the HTML.
-            const methodRegex = new RegExp(`href=["']/unibox/c/${hash}/(\\d+)["'][^>]*>\\s*<img[^>]*alt=["'][^"']*(UP Gift Card|UPBD)[^"']*["']`, 'i');
-            const methodMatch = html.match(methodRegex);
-            if (methodMatch) {
-                paymentMethodId = methodMatch[1];
-            } else {
-                // Try simpler regex
-                const altRegex = new RegExp(`data-id=["'](\\d+)["'][^>]*>[\\s\\S]*?(UP Gift Card|UPBD)`, 'i');
-                const altMatch = html.match(altRegex);
-                if (altMatch) paymentMethodId = altMatch[1];
-            }
+            paymentMethodId = '670'; // 'UP Gift Card'
         } else if (serialUpper.includes('BDMB')) {
-            // Already captured as 659
             paymentMethodId = '659';
         }
 
