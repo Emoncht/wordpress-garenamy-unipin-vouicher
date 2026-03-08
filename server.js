@@ -80,12 +80,11 @@ app.get('/queue-status', isAuthenticated, (req, res) => {
 // Setup Graceful Shutdown
 setupShutdownHandlers();
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
-
-    // Start Heartbeat for central API
-    await startHeartbeatLoop();
-
-    // Start worker loops in the same node process
-    await startWorkerLoops();
 });
+
+// Start background processes independently from the Express server binding
+// This prevents Phusion Passenger / Hostinger from timing out the boot process
+startHeartbeatLoop().catch(console.error);
+startWorkerLoops().catch(console.error);
