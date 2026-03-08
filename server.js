@@ -80,8 +80,8 @@ app.get('/queue-status', isAuthenticated, (req, res) => {
 // Setup Graceful Shutdown
 setupShutdownHandlers();
 
-app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on 0.0.0.0:${PORT}`);
 });
 
 // Start background processes independently from the Express server binding
