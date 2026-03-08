@@ -3,7 +3,7 @@ const { paymentLink, invalidateCachedDatadome } = require("./paymentLink");
 const { processUnipinCheckout } = require('./unipinApi');
 const logger = require('./logger');
 const axios = require('axios');
-const { orderRegistry, getNextTopupAllowedAt, setNextTopupAllowedAt, isProxyOnCooldown, setProxyCooldown } = require('./state');
+const { getNextTopupAllowedAt, setNextTopupAllowedAt, isProxyOnCooldown, setProxyCooldown } = require('./state');
 
 const getProxies = () => {
     const proxyString = process.env.ROTATING_PROXIES;
@@ -171,7 +171,7 @@ async function runAutomation(voucher) {
             };
 
             // Step 2: Execute blazing-fast pure HTTP API UniPin Topup
-            const result = await processUnipinCheckout(linkResult.url, payloadDetails, proxy);
+            const result = await processUnipinCheckout(linkResult.url, payloadDetails, null);
 
             if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED') {
                 await logger.logWarn(orderId, 'UniPin HTTP 429 Rate Limit Detected. Engaging 35s cooldown.');

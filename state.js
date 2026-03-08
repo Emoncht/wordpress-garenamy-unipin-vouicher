@@ -1,32 +1,23 @@
 // state.js
-// Holds all global cross-module state
-
-const orderRegistry = new Map();
-// Key: orderId (string)
-// Value: {
-//   callbackUrl: string,
-//   createdAt: Date,
-//   vouchers: [{
-//     id: string (uuid),
-//     order_id: string,
-//     uid: string,           // player ID
-//     voucher_code: string,
-//     voucher_denomination: string,
-//     status: 'Pending' | 'Submitting' | 'completed' | 'consumed' | 'Failed',
-//     reason: string | null,
-//     retry_count: number,
-//     screenshot_base64: string | null,
-//     screenshot_url: string | null,
-//     transaction_id: string | null,
-//     validated_uid: string | null,
-//     processing_started_at: Date | null,
-//     completed_at: Date | null,
-//     failed_at: Date | null,
-//   }]
-// }
+// Holds all global cross-module state for this specific worker instance
+// Note: orderRegistry has been removed since all global cross-server state is now managed by Topup Central MySQL database.
 
 let nextTopupAllowedAt = new Date(0);
-let rateLimitActive = false;
+let globalRateLimitActive = false;
+let isWorkerShuttingDown = false;
+let workerDelayMs = 1000;
+
+// -- Active Claims (for heartbeat and graceful shutdown) --
+const activeClaimedIds = new Set();
+function getActiveClaimedIds() {
+    return Array.from(activeClaimedIds);
+}
+function addClaimedId(id) {
+    activeClaimedIds.add(id);
+}
+function removeClaimedId(id) {
+    activeClaimedIds.delete(id);
+}
 
 // --- Proxy Captcha Cooldown ---
 // Key: proxy string (or 'no_proxy'), Value: timestamp when cooldown expires
@@ -47,11 +38,28 @@ function setProxyCooldown(proxyKey) {
 }
 
 module.exports = {
-    orderRegistry,
+    // Topup loops
     getNextTopupAllowedAt: () => nextTopupAllowedAt,
     setNextTopupAllowedAt: (date) => { nextTopupAllowedAt = date; },
-    getRateLimitActive: () => rateLimitActive,
-    setRateLimitActive: (isActive) => { rateLimitActive = isActive; },
+
+    // Central API synced state
+    getGlobalRateLimitActive: () => globalRateLimitActive,
+    setGlobalRateLimitActive: (isActive) => { globalRateLimitActive = isActive; },
+
+    // Heartbeats
+    getActiveClaimedIds,
+    addClaimedId,
+    removeClaimedId,
+
+    // Shutdown control
+    getShuttingDown: () => isWorkerShuttingDown,
+    setShuttingDown: (val) => { isWorkerShuttingDown = val; },
+
+    // Delay tuning
+    getWorkerDelay: () => workerDelayMs,
+    setWorkerDelay: (val) => { workerDelayMs = val; },
+
+    // Proxies
     isProxyOnCooldown,
     setProxyCooldown,
 };
