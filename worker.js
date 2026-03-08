@@ -6,13 +6,24 @@ const { claimVouchers, updateVoucher, reportRateLimit } = require('./centralApi'
 const { SERVER_ID } = require('./heartbeat');
 
 const BROWSER_CONCURRENCY = parseInt(process.env.BROWSER_CONCURRENCY || '1', 10);
+const AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per voucher
 let isBrowserPoolInitialized = false;
 
 // Sleep utility
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Timeout wrapper - rejects if a promise takes longer than `ms`
+function withTimeout(promise, ms, label = 'Operation') {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function browserWorkerLoop(browserId) {
     console.log(`[Worker ${browserId}] Loop started.`);
+    let lastAliveLog = Date.now();
 
     while (true) {
         if (state.getShuttingDown()) {
@@ -36,6 +47,10 @@ async function browserWorkerLoop(browserId) {
 
             if (!response || !response.status || response.claimed_count === 0 || !response.vouchers || response.vouchers.length === 0) {
                 // Queue is empty, wait a bit
+                if (Date.now() - lastAliveLog > 60000) {
+                    console.log(`[Worker ${browserId}] Alive - queue empty, polling...`);
+                    lastAliveLog = Date.now();
+                }
                 await sleep(5000);
                 continue;
             }
@@ -51,20 +66,24 @@ async function browserWorkerLoop(browserId) {
             // Track locally for heartbeat & shutdown
             state.addClaimedId(voucher.id);
 
-            // 4. Run Automation
+            // 4. Run Automation (with hard timeout to prevent infinite hangs)
             let result;
             try {
                 // Map API object to runAutomation expected object
-                result = await runAutomation({
-                    id: voucher.id,
-                    order_id: voucher.order_id,
-                    uid: voucher.player_id,
-                    voucher_code: voucher.voucher_code,
-                    voucher_denomination: voucher.voucher_denomination
-                });
+                result = await withTimeout(
+                    runAutomation({
+                        id: voucher.id,
+                        order_id: voucher.order_id,
+                        uid: voucher.player_id,
+                        voucher_code: voucher.voucher_code,
+                        voucher_denomination: voucher.voucher_denomination
+                    }),
+                    AUTOMATION_TIMEOUT_MS,
+                    `Automation for voucher ${voucher.id}`
+                );
             } catch (autoErr) {
-                console.error(`[Worker ${browserId}] Fatal automation error:`, autoErr);
-                result = { status: 'failed', reason: 'Fatal Node.js crash during automation' };
+                console.error(`[Worker ${browserId}] Fatal automation error:`, autoErr.message);
+                result = { status: 'failed', reason: autoErr.message || 'Fatal Node.js crash during automation' };
             }
 
             // Ensure valid result object

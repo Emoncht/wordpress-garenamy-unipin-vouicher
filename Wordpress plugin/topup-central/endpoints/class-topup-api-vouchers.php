@@ -53,14 +53,15 @@ class Topup_API_Vouchers {
             $ids_placeholder = implode( ',', array_fill( 0, count( $claimed_ids ), '%d' ) );
 
             // 2. Lock them immediately
+            $now_utc = current_time( 'mysql', 1 );
             $update_query = $wpdb->prepare(
                 "UPDATE $table_vouchers 
                  SET status = 'claimed', 
                      locked_by = %s, 
-                     locked_at = NOW(),
-                     processing_started_at = NOW()
+                     locked_at = %s,
+                     processing_started_at = %s
                  WHERE id IN ( $ids_placeholder )",
-                array_merge( array( $server_id ), $claimed_ids )
+                array_merge( array( $server_id, $now_utc, $now_utc ), $claimed_ids )
             );
             $wpdb->query( $update_query );
         }
@@ -134,7 +135,7 @@ class Topup_API_Vouchers {
             $update_data['status']       = 'pending';
             $update_data['locked_by']    = null; // release lock
             $update_data['retry_count']  = $voucher->retry_count + 1;
-            $update_data['failed_at']    = current_time( 'mysql' );
+            $update_data['failed_at']    = current_time( 'mysql', 1 );
             $format[] = '%s'; $format[] = '%s'; $format[] = '%d'; $format[] = '%s';
         } else {
             // Terminal state or out of retries
@@ -144,7 +145,7 @@ class Topup_API_Vouchers {
             }
 
             $update_data['status']       = $final_status;
-            $update_data['completed_at'] = current_time( 'mysql' );
+            $update_data['completed_at'] = current_time( 'mysql', 1 );
             $format[] = '%s'; $format[] = '%s';
         }
 
@@ -257,7 +258,7 @@ class Topup_API_Vouchers {
         // Mark local order completed and free up DB space from huge base64 strings
         $wpdb->update(
             $table_orders,
-            array( 'status' => $order_status_payload, 'completed_at' => current_time( 'mysql' ), 'total_time_seconds' => $total_sec ),
+            array( 'status' => $order_status_payload, 'completed_at' => current_time( 'mysql', 1 ), 'total_time_seconds' => $total_sec ),
             array( 'id' => $order->id )
         );
 

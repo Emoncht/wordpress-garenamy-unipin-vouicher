@@ -82,9 +82,10 @@ class Topup_API_Orders {
                 'order_id'     => $order_id,
                 'callback_url' => $callback_url,
                 'status'       => 'pending',
-                'priority'     => $priority
+                'priority'     => $priority,
+                'created_at'   => current_time( 'mysql', 1 )
             ),
-            array( '%s', '%s', '%s', '%d' )
+            array( '%s', '%s', '%s', '%d', '%s' )
         );
 
         if ( ! $inserted_order ) {
@@ -127,9 +128,10 @@ class Topup_API_Orders {
                                 'player_id'            => $player_id,
                                 'voucher_code'         => $code,
                                 'voucher_denomination' => $denomination,
-                                'status'               => 'pending'
+                                'status'               => 'pending',
+                                'created_at'           => current_time( 'mysql', 1 )
                             ),
-                            array( '%s', '%s', '%s', '%s', '%s' )
+                            array( '%s', '%s', '%s', '%s', '%s', '%s' )
                         );
 
                         if ( $inserted_voucher ) {
