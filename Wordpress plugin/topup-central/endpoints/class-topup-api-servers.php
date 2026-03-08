@@ -17,9 +17,22 @@ class Topup_API_Servers {
         $table_servers     = $wpdb->prefix . 'topup_servers';
         $table_rate_limits = $wpdb->prefix . 'topup_rate_limits';
 
-        $params    = $request->get_json_params();
-        $server_id = sanitize_text_field( $params['server_id'] ?? '' );
-        $label     = sanitize_text_field( $params['label'] ?? '' );
+        $params             = $request->get_json_params();
+        $server_id          = sanitize_text_field( $params['server_id'] ?? '' );
+        $label              = sanitize_text_field( $params['label'] ?? '' );
+        $uptime_seconds     = isset( $params['uptime_seconds'] ) ? intval( $params['uptime_seconds'] ) : 0;
+        
+        $active_voucher_ids = '';
+        if ( isset( $params['active_voucher_ids'] ) && is_array( $params['active_voucher_ids'] ) ) {
+            $active_voucher_ids = implode( ',', array_map( 'intval', $params['active_voucher_ids'] ) );
+        }
+        
+        // Ensure accurate IP even through reverse proxies like Cloudflare/Hostinger
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
+        if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $ips = explode(',', sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ));
+            $ip_address = trim($ips[0]);
+        }
 
         if ( empty( $server_id ) ) {
             return new WP_Error( 'invalid_server_id', 'Missing server_id.', array( 'status' => 400 ) );
@@ -29,8 +42,11 @@ class Topup_API_Servers {
         $existing = $wpdb->get_row( $wpdb->prepare( "SELECT server_id FROM $table_servers WHERE server_id = %s", $server_id ) );
 
         $data = array(
-            'last_heartbeat' => current_time( 'mysql' ),
-            'is_active'      => 1
+            'last_heartbeat'     => current_time( 'mysql' ),
+            'is_active'          => 1,
+            'ip_address'         => $ip_address,
+            'uptime_seconds'     => $uptime_seconds,
+            'active_voucher_ids' => $active_voucher_ids
         );
         if ( ! empty( $label ) ) {
             $data['label'] = $label;
@@ -80,6 +96,9 @@ class Topup_API_Servers {
         global $wpdb;
         $table_servers  = $wpdb->prefix . 'topup_servers';
         $table_vouchers = $wpdb->prefix . 'topup_vouchers';
+
+        // 1. Delete deeply stale servers (older than 1 day) to prevent table bloat
+        $wpdb->query( "DELETE FROM $table_servers WHERE last_heartbeat < (NOW() - INTERVAL 1 DAY)" );
 
         // 1. Find all servers that haven't sent a heartbeat in 5 minutes
         $stale_servers = $wpdb->get_col( 

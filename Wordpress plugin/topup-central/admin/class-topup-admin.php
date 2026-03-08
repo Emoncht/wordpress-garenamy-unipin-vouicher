@@ -245,14 +245,15 @@ class Topup_Central_Admin {
                 <table class="wp-list-table widefat striped table-view-list">
                     <thead>
                         <tr>
-                            <th>Server ID (Label)</th>
+                            <th>Server</th>
                             <th>Status</th>
+                            <th>Telemetry</th>
                             <th>Last Heartbeat</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($servers)): ?>
-                            <tr><td colspan="3">No servers registered yet. Node.js workers auto-register via heartbeat.</td></tr>
+                            <tr><td colspan="4">No servers registered yet. Node.js workers auto-register via heartbeat.</td></tr>
                         <?php else: ?>
                             <?php foreach($servers as $s): 
                                 $is_active = $s->is_active;
@@ -272,6 +273,11 @@ class Topup_Central_Admin {
                             <tr>
                                 <td><strong><?php echo esc_html($s->server_id); ?></strong> <br><small><?php echo esc_html($s->label); ?></small></td>
                                 <td style="color: <?php echo $status_color; ?>; font-weight:bold;"><?php echo $status_text; ?></td>
+                                <td>
+                                    <?php if (!empty($s->ip_address)): ?>IP: <?php echo esc_html($s->ip_address); ?><br><?php endif; ?>
+                                    <?php if (!empty($s->uptime_seconds)): ?>Uptime: <?php echo esc_html(gmdate("H:i:s", $s->uptime_seconds)); ?><br><?php endif; ?>
+                                    <?php if (!empty($s->active_voucher_ids)): ?><small>Task IDs: <?php echo esc_html($s->active_voucher_ids); ?></small><?php endif; ?>
+                                </td>
                                 <td><?php echo esc_html($s->last_heartbeat); ?></td>
                             </tr>
                             <?php endforeach; ?>
