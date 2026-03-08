@@ -22,7 +22,6 @@
     "luxon": "^3.4.4",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
-    "puppeteer-extra-plugin-proxy": "^1.0.2",
     "uuid": "^10.0.0"
   }
 }
