@@ -276,13 +276,19 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
         const axiosConfig = {
             headers: requestHeaders,
             timeout: 30000,
-            validateStatus: (s) => s < 500
+            validateStatus: (s) => s < 600 // Don't throw ugly exceptions on 502 from proxy
         };
         if (proxyKey !== 'no_proxy') {
             axiosConfig.httpsAgent = new HttpsProxyAgent(proxyKey);
         }
 
         const response = await axios.post('https://api-js.datadome.co/js/', querystring.stringify(data), axiosConfig);
+
+        if (response.status >= 400) {
+            await logResponse(orderId, 'DataDome (Error)', { status: response.status, headers: response.headers, body: JSON.stringify(response.data).slice(0, 1000) });
+            await logger.logWarn(orderId, `DataDome generation returned status ${response.status}`, { proxyKey });
+            return null;
+        }
 
         await logResponse(orderId, 'DataDome', { status: response.status, headers: response.headers, body: JSON.stringify(response.data).slice(0, 1000) });
         const responseData = response.data || {};
