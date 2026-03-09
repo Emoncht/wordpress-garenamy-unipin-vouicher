@@ -5,10 +5,40 @@ const logger = require('./logger');
 const axios = require('axios');
 const { acquireThrottle, isProxyOnCooldown, setProxyCooldown, acquirePlayerLock, setNextTopupAllowedAt, isUnipinProxyActive, activateUnipinProxy } = require('./state');
 
+const fs = require('fs');
+const path = require('path');
+
+let cachedProxies = null;
+
 const getProxies = () => {
+    if (cachedProxies) return cachedProxies;
+
+    // Priority 1: Read from proxies.txt file (one proxy per line)
+    const proxyFilePath = path.join(__dirname, 'proxies.txt');
+    try {
+        const fileContent = fs.readFileSync(proxyFilePath, 'utf8');
+        const proxies = fileContent.split('\n').map(p => p.trim()).filter(p => p.length > 0 && !p.startsWith('#'));
+        if (proxies.length > 0) {
+            console.log(`[Proxy] Loaded ${proxies.length} proxies from proxies.txt`);
+            cachedProxies = proxies;
+            return cachedProxies;
+        }
+    } catch (e) {
+        // File doesn't exist, fall through to env var
+    }
+
+    // Priority 2: Fallback to ROTATING_PROXIES env var (backward compat)
     const proxyString = process.env.ROTATING_PROXIES;
-    if (!proxyString) return [null];
-    return proxyString.split('|').map(p => p.trim()).filter(p => p.length > 0);
+    if (proxyString) {
+        cachedProxies = proxyString.split('|').map(p => p.trim()).filter(p => p.length > 0);
+        console.log(`[Proxy] Loaded ${cachedProxies.length} proxies from ROTATING_PROXIES env`);
+        return cachedProxies;
+    }
+
+    // No proxies configured
+    console.warn('[Proxy] No proxies configured. Running without proxy.');
+    cachedProxies = [null];
+    return cachedProxies;
 };
 
 // We keep the "pool" concept so the queue monitor and worker loop don't break,
