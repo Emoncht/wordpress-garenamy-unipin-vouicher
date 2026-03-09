@@ -27,6 +27,7 @@ function isAuthenticated(req, res, next) {
     res.redirect('/login');
 }
 
+app.get('/', (req, res) => res.status(200).send('Gerrara HERE'));
 app.get('/login', (req, res) => res.sendFile(__dirname + '/login.html'));
 app.post('/login', passport.authenticate('local', {
     successRedirect: '/monitor',
