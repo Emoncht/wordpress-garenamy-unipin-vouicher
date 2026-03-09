@@ -384,7 +384,7 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
         const axiosConfig = {
             headers: headers,
             timeout: 60000,
-            validateStatus: (s) => s < 500 // Don't throw on 4xx
+            validateStatus: (s) => s < 600 // Allow 4xx and 5xx so we can log them
         };
         if (proxy) {
             axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
@@ -402,6 +402,17 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
         console.log("Status:", response.status);
         console.log("Body:", JSON.stringify(responseData, null, 2));
         await logResponse(orderId, 'Garena Login', { status: response.status, headers: response.headers, body: responseData });
+
+        // --- 502 Handling: Explicitly requested by user to log everything ---
+        if (response.status === 502) {
+            console.error(`Garena API returned 502 (Bad Gateway). Logging full response...`);
+            await logger.logError(orderId, 'Garena API 502 Bad Gateway', null, {
+                status: 502,
+                headers: response.headers,
+                response_body: responseData
+            });
+            return null;
+        }
 
         // --- 403 Fallback: Invalidate DataDome cache and retry ONCE ---
         if (response.status === 403) {
