@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TOPUP_CENTRAL_VERSION', '1.0.0' );
-define( 'TOPUP_CENTRAL_DB_VERSION', '1.0.0' );
+define( 'TOPUP_CENTRAL_DB_VERSION', '1.0.1' );
 
 // ------------------------------------------------------------------
 // 1. Database Installation
@@ -69,6 +69,7 @@ function topup_central_install() {
     $table_servers = $wpdb->prefix . 'topup_servers';
     $sql_servers = "CREATE TABLE $table_servers (
         server_id varchar(100) NOT NULL,
+        nickname varchar(100) DEFAULT NULL,
         label varchar(200) DEFAULT NULL,
         last_heartbeat datetime NOT NULL,
         is_active tinyint(1) DEFAULT 1 NOT NULL,
@@ -101,6 +102,12 @@ function topup_central_install() {
     add_option('topup_central_api_key', 'CHANGE_ME_IN_ADMIN_PANEL');
 }
 register_activation_hook( __FILE__, 'topup_central_install' );
+
+add_action( 'plugins_loaded', function() {
+    if ( get_option( 'topup_central_db_version' ) !== TOPUP_CENTRAL_DB_VERSION ) {
+        topup_central_install();
+    }
+} );
 
 // ------------------------------------------------------------------
 // 2. Authentication Helper
@@ -202,11 +209,15 @@ if ( ! wp_next_scheduled( 'topup_central_deadlock_cron' ) ) {
     wp_schedule_event( time(), 'every_5_minutes', 'topup_central_deadlock_cron' );
 }
 
-// Add a 2 minute cron schedule if it doesn't exist
+// Add custom cron schedules if they don't exist
 add_filter( 'cron_schedules', function ( $schedules ) {
     $schedules['every_2_minutes'] = array(
         'interval' => 120,
         'display'  => __( 'Every 2 Minutes' )
+    );
+    $schedules['every_5_minutes'] = array(
+        'interval' => 300,
+        'display'  => __( 'Every 5 Minutes' )
     );
     return $schedules;
 });

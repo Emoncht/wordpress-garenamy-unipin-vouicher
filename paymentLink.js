@@ -273,11 +273,16 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
     try {
         await logRequest(orderId, 'DataDome', { url: 'https://api-js.datadome.co/js/', method: 'POST', headers: requestHeaders, body: querystring.stringify(data).slice(0, 500) });
 
-        const response = await axios.post('https://api-js.datadome.co/js/', querystring.stringify(data), {
+        const axiosConfig = {
             headers: requestHeaders,
             timeout: 30000,
             validateStatus: (s) => s < 500
-        });
+        };
+        if (proxyKey !== 'no_proxy') {
+            axiosConfig.httpsAgent = new HttpsProxyAgent(proxyKey);
+        }
+
+        const response = await axios.post('https://api-js.datadome.co/js/', querystring.stringify(data), axiosConfig);
 
         await logResponse(orderId, 'DataDome', { status: response.status, headers: response.headers, body: JSON.stringify(response.data).slice(0, 1000) });
         const responseData = response.data || {};
@@ -317,6 +322,22 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
 const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInvalidation = false) => {
     const loginUrl = 'https://shop.garena.my/api/auth/player_id_login';
     const proxyKey = proxy || 'no_proxy';
+
+    let proxyExitIp = 'Unknown';
+    if (proxyKey !== 'no_proxy') {
+        try {
+            const ipRes = await axios.get('https://api.ipify.org?format=json', {
+                httpsAgent: new HttpsProxyAgent(proxyKey),
+                timeout: 8000
+            });
+            proxyExitIp = ipRes.data.ip;
+            console.log(`[Proxy] Using exit IP: ${proxyExitIp}`);
+            await logger.logInfo(orderId, `Assigned Proxy Exit IP`, { exit_ip: proxyExitIp, proxy_key: proxyKey });
+        } catch (e) {
+            console.log(`[Proxy] Failed to resolve exit IP from ${proxyKey.split('@').pop() || proxyKey}`);
+        }
+    }
+
     console.log(`--- [1] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
     const datadomeCookie = await getOrRegenerateDatadome(loginUrl, orderId, proxyKey);
     if (!datadomeCookie) {
