@@ -4,7 +4,24 @@ const path = require('path');
 class OrderLogger {
     constructor() {
         this.logsDir = path.join(__dirname, 'Logs');
+        this.fileLocks = new Map(); // added async lock map
         this.ensureLogsDirectory();
+    }
+
+    async acquireTaskLock(key) {
+        // Wait for previous lock on this key to resolve
+        while (this.fileLocks.has(key)) {
+            await this.fileLocks.get(key);
+        }
+
+        let releaseLock;
+        const lockPromise = new Promise(resolve => { releaseLock = resolve; });
+        this.fileLocks.set(key, lockPromise);
+
+        return () => {
+            this.fileLocks.delete(key);
+            releaseLock();
+        };
     }
 
     async ensureLogsDirectory() {
@@ -22,6 +39,7 @@ class OrderLogger {
 
     async initializeOrderLog(orderId, orderData = {}) {
         const logFilePath = this.getLogFilePath(orderId);
+        const release = await this.acquireTaskLock(orderId);
 
         const initialLogEntry = {
             order_id: orderId,
@@ -32,9 +50,13 @@ class OrderLogger {
 
         try {
             await fs.writeFile(logFilePath, JSON.stringify(initialLogEntry, null, 2));
-            this.log(orderId, 'info', 'Order log initialized', { order_data: orderData });
+            // Log manually to skip duplicate file read/write since it's initial
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+            console.log(`[${timestamp}] [${orderId}] [INFO] Order log initialized`);
         } catch (error) {
             console.error(`Failed to initialize log file for order ${orderId}:`, error);
+        } finally {
+            release();
         }
     }
 
@@ -47,6 +69,8 @@ class OrderLogger {
             message: message,
             data: data
         };
+
+        const release = await this.acquireTaskLock(orderId);
 
         try {
             // Read existing log file
@@ -71,7 +95,7 @@ class OrderLogger {
             // Write back to file
             await fs.writeFile(logFilePath, JSON.stringify(logFileContent, null, 2));
 
-            // Console output — clean and concise. Full data is saved to the JSON log file above.
+            // Console output
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
             const lvl = level.toUpperCase();
 
@@ -97,6 +121,8 @@ class OrderLogger {
             console.error(`[LogError] Failed to write log for order ${orderId}: ${error.message}`);
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
             console.log(`[${timestamp}] [${orderId}] [${level.toUpperCase()}] ${message}`);
+        } finally {
+            release(); // Release file lock for next worker
         }
     }
 
@@ -123,6 +149,7 @@ class OrderLogger {
 
     async finalizeOrderLog(orderId, finalStatus, summary = {}) {
         const logFilePath = this.getLogFilePath(orderId);
+        const release = await this.acquireTaskLock(orderId);
 
         try {
             const fileContent = await fs.readFile(logFilePath, 'utf8');
@@ -140,6 +167,8 @@ class OrderLogger {
             });
         } catch (error) {
             console.error(`Failed to finalize log file for order ${orderId}:`, error);
+        } finally {
+            release();
         }
     }
 

@@ -72,7 +72,8 @@ async function browserWorkerLoop(browserId) {
                         order_id: voucher.order_id,
                         uid: voucher.player_id,
                         voucher_code: voucher.voucher_code,
-                        voucher_denomination: voucher.voucher_denomination
+                        voucher_denomination: voucher.voucher_denomination,
+                        callback_url: voucher.callback_url // New field for pre-check
                     }),
                     AUTOMATION_TIMEOUT_MS,
                     `Automation for voucher ${voucher.id}`

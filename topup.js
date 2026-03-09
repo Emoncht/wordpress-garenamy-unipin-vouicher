@@ -94,13 +94,14 @@ async function releaseSlot(slotId) {
 // Same logic as before, but decoupled from Selenium/Puppeteer
 async function checkVoucherStatus(voucher) {
     const orderId = voucher.order_id;
-    try {
-        const order = orderRegistry.get(voucher.order_id);
-        if (!order || !order.callbackUrl) return { status: 'unknown', reason: 'Missing callbackUrl' };
+    const callbackUrl = voucher.callback_url; // Use callback_url passed from DB
 
-        let checkUrl = order.callbackUrl.replace('/orders', '/check');
-        if (checkUrl === order.callbackUrl && order.callbackUrl.includes('/wp-json/custom-order-plugin/v1')) {
-            checkUrl = order.callbackUrl.substring(0, order.callbackUrl.indexOf('/v1') + 3) + '/check';
+    try {
+        if (!callbackUrl) return { status: 'unknown', reason: 'Missing callbackUrl' };
+
+        let checkUrl = callbackUrl.replace('/orders', '/check');
+        if (checkUrl === callbackUrl && callbackUrl.includes('/wp-json/custom-order-plugin/v1')) {
+            checkUrl = callbackUrl.substring(0, callbackUrl.indexOf('/v1') + 3) + '/check';
         }
 
         const response = await axios.post(checkUrl, { order_id: voucher.order_id }, {
@@ -186,7 +187,15 @@ async function runAutomation(voucher) {
                         await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Token purged. Proxy flagged for 5 min cooldown. Trying next proxy.`);
                         continue;
                     }
-                    throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);
+                    // Fatal errors that shouldn't be retried on another proxy
+                    if (linkResult.error === 'invalid_id' || linkResult.error.includes('Player ID mismatch')) {
+                        throw new Error(`Garena rejected player details: ${linkResult.error}`);
+                    }
+
+                    // Network or unknown errors from proxy. Log and try next.
+                    lastError = linkResult.error;
+                    await logger.logWarn(orderId, `Proxy ${proxyKey} failed to generate link: ${linkResult.error}. Trying next proxy.`);
+                    continue;
                 }
 
                 await logger.logInfo(orderId, 'Payment link OK. Submitting to UniPin...');
@@ -248,7 +257,7 @@ async function runAutomation(voucher) {
             }
         }
 
-        return { status: 'Failed', reason: 'All proxies failed or rate limits exceeded.' };
+        return { status: 'failed', reason: `All proxies failed. Last error: ${lastError || 'Rate limits exceeded.'}` };
     } finally {
         releasePlayerLock();
     }
