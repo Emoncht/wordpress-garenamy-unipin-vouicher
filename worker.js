@@ -57,11 +57,7 @@ async function browserWorkerLoop(browserId) {
 
             const voucher = response.vouchers[0];
 
-            await logger.logInfo(voucher.order_id, `Browser ${browserId} claimed voucher for processing`, {
-                voucher_id: voucher.id,
-                browser_id: browserId,
-                retry_count: voucher.retry_count
-            });
+            await logger.logInfo(voucher.order_id, `Worker ${browserId} claimed voucher #${voucher.id} (retry: ${voucher.retry_count || 0})`);
 
             // Track locally for heartbeat & shutdown
             state.addClaimedId(voucher.id);
@@ -97,12 +93,10 @@ async function browserWorkerLoop(browserId) {
             const status = result.status || 'failed';
             const reason = result.reason || (status === 'failed' ? 'Automation failed unexpectedly.' : 'Completed');
 
-            await logger.logInfo(voucher.order_id, `Voucher processing completed with status: ${status}`, {
+            await logger.logInfo(voucher.order_id, `Voucher #${voucher.id} ${status}: ${reason}`, {
                 voucher_id: voucher.id,
                 final_status: status,
-                reason: reason,
-                transaction_id: result.transaction_id,
-                validated_uid: result.validated_uid
+                reason: reason
             });
 
             // 5. Check if THIS worker hit a rate limit (Garena/UniPin block)

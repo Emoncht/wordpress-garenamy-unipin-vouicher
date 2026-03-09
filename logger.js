@@ -71,20 +71,32 @@ class OrderLogger {
             // Write back to file
             await fs.writeFile(logFilePath, JSON.stringify(logFileContent, null, 2));
 
-            // Also log to console for immediate visibility (can be disabled in production)
+            // Console output — clean and concise. Full data is saved to the JSON log file above.
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-            const consoleMessage = `[${timestamp}] [${orderId}] [${level.toUpperCase()}] ${message}`;
-            if (Object.keys(data).length > 0) {
-                console.log(consoleMessage, data);
-            } else {
-                console.log(consoleMessage);
+            const lvl = level.toUpperCase();
+
+            // Build a short inline summary from key fields only
+            let suffix = '';
+            if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+                const important = ['status', 'final_status', 'result_status', 'reason', 'error_message', 'proxy', 'voucher_id', 'payment_url'];
+                const parts = [];
+                for (const key of important) {
+                    if (data[key] !== undefined && data[key] !== null) {
+                        const val = String(data[key]);
+                        // Truncate long values like URLs
+                        parts.push(`${key}=${val.length > 60 ? val.substring(0, 60) + '...' : val}`);
+                    }
+                }
+                if (parts.length > 0) suffix = ` | ${parts.join(', ')}`;
             }
+
+            console.log(`[${timestamp}] [${orderId}] [${lvl}] ${message}${suffix}`);
 
         } catch (error) {
             // Fallback to console if file logging fails
-            console.error(`Failed to write to log file for order ${orderId}:`, error);
+            console.error(`[LogError] Failed to write log for order ${orderId}: ${error.message}`);
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-            console.log(`[${timestamp}] [${orderId}] [${level.toUpperCase()}] ${message}`, data);
+            console.log(`[${timestamp}] [${orderId}] [${level.toUpperCase()}] ${message}`);
         }
     }
 

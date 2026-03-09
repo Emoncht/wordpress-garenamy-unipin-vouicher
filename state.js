@@ -7,6 +7,21 @@ let globalRateLimitActive = false;
 let isWorkerShuttingDown = false;
 let workerDelayMs = 1000;
 
+// --- UniPin Proxy Fallback Timer ---
+// When 0, UniPin uses direct server IP (free). When active, routes through proxy.
+let unipinProxyUntil = 0;
+
+function isUnipinProxyActive() {
+    if (Date.now() < unipinProxyUntil) return true;
+    unipinProxyUntil = 0; // expired, reset
+    return false;
+}
+
+function activateUnipinProxy(durationMs = 60000) {
+    unipinProxyUntil = Date.now() + durationMs;
+    console.log(`[UniPin] Proxy fallback activated for ${durationMs / 1000}s`);
+}
+
 // --- Async Throttle Queue (Fix 1) ---
 // Guarantees minimum spacing (THROTTLE_MS) between Garena API calls,
 // even when multiple async worker loops are running concurrently.
@@ -115,4 +130,8 @@ module.exports = {
 
     // Player ID lock
     acquirePlayerLock,
+
+    // UniPin Proxy Fallback
+    isUnipinProxyActive,
+    activateUnipinProxy,
 };

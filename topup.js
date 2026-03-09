@@ -3,7 +3,7 @@ const { paymentLink, invalidateCachedDatadome } = require("./paymentLink");
 const { processUnipinCheckout } = require('./unipinApi');
 const logger = require('./logger');
 const axios = require('axios');
-const { acquireThrottle, isProxyOnCooldown, setProxyCooldown, acquirePlayerLock, setNextTopupAllowedAt } = require('./state');
+const { acquireThrottle, isProxyOnCooldown, setProxyCooldown, acquirePlayerLock, setNextTopupAllowedAt, isUnipinProxyActive, activateUnipinProxy } = require('./state');
 
 const getProxies = () => {
     const proxyString = process.env.ROTATING_PROXIES;
@@ -100,7 +100,7 @@ async function runAutomation(voucher) {
     const releasePlayerLock = await acquirePlayerLock(voucher.uid);
 
     try {
-        await logger.initializeOrderLog(orderId, { voucher_id: voucher.id, player_id: voucher.uid, voucher_code: voucher.voucher_code, voucher_denomination: voucher.voucher_denomination });
+        await logger.initializeOrderLog(orderId, { voucher_id: voucher.id, player_id: voucher.uid, denomination: voucher.voucher_denomination });
 
         const proxies = getProxies();
         let lastError = null;
@@ -143,7 +143,7 @@ async function runAutomation(voucher) {
             }
 
             try {
-                await logger.logInfo(orderId, `Generating payment link via API...`, { proxy: proxy || 'none' });
+                await logger.logInfo(orderId, `Generating payment link...`, { proxy: proxy ? 'yes' : 'direct' });
 
                 // Step 1: Securely fetch Garena Payment Link URL
                 const linkResult = await paymentLink(voucher.uid, proxy, orderId);
@@ -159,7 +159,7 @@ async function runAutomation(voucher) {
                     throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);
                 }
 
-                await logger.logInfo(orderId, 'Payment link generated successfully. Proceeding to UniPin native API submission...', { payment_url: linkResult.url });
+                await logger.logInfo(orderId, 'Payment link OK. Submitting to UniPin...');
 
                 // Ensure voucher PINs are formatted securely
                 const voucherParts = voucher.voucher_code.split(' ');
@@ -173,14 +173,29 @@ async function runAutomation(voucher) {
                     pinBlocks: pinBlocks
                 };
 
-                // Step 2: Execute blazing-fast pure HTTP API UniPin Topup
-                const result = await processUnipinCheckout(linkResult.url, payloadDetails, proxyKey);
+                // Step 2: UniPin Checkout with Proxy Fallback Strategy
+                // Try direct (free) first. If rate-limited, activate proxy for 60s and retry.
+                const useProxyForUnipin = isUnipinProxyActive();
+                const unipinProxy = useProxyForUnipin ? proxyKey : null;
+                if (useProxyForUnipin) {
+                    await logger.logInfo(orderId, 'UniPin routed through proxy (fallback active)');
+                }
 
+                let result = await processUnipinCheckout(linkResult.url, payloadDetails, unipinProxy);
+
+                // If direct connection hit rate limit, activate proxy fallback and retry immediately
+                if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED' && !useProxyForUnipin) {
+                    await logger.logWarn(orderId, 'UniPin 429 on direct IP. Activating proxy fallback for 60s and retrying...');
+                    activateUnipinProxy(60000); // 1 minute proxy mode
+                    result = await processUnipinCheckout(linkResult.url, payloadDetails, proxyKey);
+                }
+
+                // If still rate-limited even through proxy, engage global cooldown
                 if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED') {
-                    await logger.logWarn(orderId, 'UniPin HTTP 429 Rate Limit Detected. Engaging 35s cooldown.');
+                    await logger.logWarn(orderId, 'UniPin 429 persists through proxy. Engaging 35s global cooldown.');
                     setNextTopupAllowedAt(new Date(Date.now() + 35000));
                     lastError = 'RATE_LIMIT_DETECTED';
-                    continue; // Try next proxy / loop
+                    continue;
                 }
 
                 await logger.logInfo(orderId, `API native checkout completed`, { result_status: result.status, reason: result.reason });
