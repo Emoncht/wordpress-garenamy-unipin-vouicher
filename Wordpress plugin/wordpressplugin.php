@@ -281,8 +281,8 @@ foreach ($vouchers as $index => $voucher) {
             // Smart detection: try to parse as JSON
             $json_test = json_decode($decoded, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($json_test)) {
-                // It's a JSON log file
-                $json_filename = 'log_' . $response_order_id . '_' . $voucher_code . '.json';
+                // It's a JSON log file (Centralized per Order)
+                $json_filename = 'log_' . $response_order_id . '.json';
                 file_put_contents($orders_dir . '/' . $json_filename, $decoded);
                 $new_json_url = $upload_dir['baseurl'] . '/orders/' . $json_filename;
             } else {
@@ -322,7 +322,10 @@ foreach ($vouchers as $index => $voucher) {
                 'used_time'      => $used_time,
                 'transaction_id' => $transaction_id,
             );
-            if ($new_screenshot_url) {
+            if ($new_json_url) {
+                $update_data['screenshot_url'] = $new_json_url;
+                $stored_screenshot_url = $new_json_url;
+            } elseif ($new_screenshot_url) {
                 $update_data['screenshot_url'] = $new_screenshot_url;
                 $stored_screenshot_url = $new_screenshot_url;
             }
@@ -344,7 +347,9 @@ foreach ($vouchers as $index => $voucher) {
         }
     } else {
         // No existing record - Insert new record regardless of status
-        if ($new_screenshot_url) {
+        if ($new_json_url) {
+            $stored_screenshot_url = $new_json_url;
+        } elseif ($new_screenshot_url) {
             $stored_screenshot_url = $new_screenshot_url;
         } else {
             $stored_screenshot_url = ''; 

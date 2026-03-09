@@ -153,23 +153,29 @@ class Topup_Central_Admin {
                 <!-- Activity Feed (wide, primary) -->
                 <div class="tc-card">
                     <h3>Recent Activity</h3>
-                    <table class="wp-list-table widefat" style="margin-top:5px;">
-                        <thead>
-                            <tr>
-                                <th style="width:70px;">Claimed At</th>
-                                <th>Order ID</th>
-                                <th>Player ID</th>
-                                <th>Denomination</th>
-                                <th>Voucher Code</th>
-                                <th>Server</th>
-                                <th style="width:70px;">Duration</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tc-activity-feed">
-                            <tr><td colspan="8">Loading feed...</td></tr>
-                        </tbody>
-                    </table>
+                    <div class="tc-table-wrapper">
+                        <table class="wp-list-table widefat" style="margin-top:0;">
+                            <thead>
+                                <tr>
+                                    <th style="width:70px;">Claimed At</th>
+                                    <th>Order ID</th>
+                                    <th>Player ID</th>
+                                    <th>Denomination</th>
+                                    <th>Voucher Code</th>
+                                    <th>Server</th>
+                                    <th style="width:70px;">Duration</th>
+                                    <th>Status</th>
+                                    <th style="width:50px;">Log</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tc-activity-feed">
+                                <tr><td colspan="9">Loading feed...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:15px; text-align:right;">
+                        <a href="<?php echo admin_url('admin.php?page=topup-central-orders'); ?>" class="button">View All Orders &raquo;</a>
+                    </div>
                 </div>
 
                 <!-- Server Fleet (narrow) -->
@@ -297,6 +303,7 @@ class Topup_Central_Admin {
                                             <td style="font-size:11px; color:#646970;" title="${f.locked_by || ''}">${serverDisplay}</td>
                                             <td style="font-size:12px; font-weight:600;">${durationStr}</td>
                                             <td><span class="tc-badge ${f.status}">${f.status}</span></td>
+                                            <td><button class="button button-small btn-log" data-id="${f.order_id}" title="View Order Log">Log</button></td>
                                         </tr>
                                     `;
                                 });
@@ -333,8 +340,62 @@ class Topup_Central_Admin {
                         });
                     }
                 });
+                
+                // Shared Log Viewer Logic
+                $(document).on('click', '.btn-log', function() {
+                    const id = $(this).data('id');
+                    const modal = $('#tc-log-modal');
+                    const content = $('#tc-log-content');
+                    
+                    $('#tc-log-title').text(`Logs: Order ${id}`);
+                    content.html('Loading log data...');
+                    modal.css('display', 'flex');
+                    
+                    $.post(ajaxurl, { action: 'topup_get_order_log', order_id: id }, function(res) {
+                        if(res.success && res.data) {
+                            try {
+                                const logData = res.data;
+                                let out = `<div style="color:#a5a5a5; margin-bottom:15px;">Target: ${logData.order_data?.player_id || 'UID N/A'} | Created: ${logData.created_at}</div>`;
+                                
+                                if (logData.logs && logData.logs.length > 0) {
+                                    logData.logs.forEach(l => {
+                                        const lvlStr = (l.level || 'INFO').toLowerCase();
+                                        const timeStr = l.timestamp ? l.timestamp.replace('T', ' ').substring(0, 19) : '';
+                                        out += `<div class="tc-log-line">
+                                            <span class="tc-log-time">[${timeStr}]</span> 
+                                            <span class="tc-log-lvl-${lvlStr}">[${lvlStr.toUpperCase()}]</span> 
+                                            ${l.message}
+                                        </div>`;
+                                    });
+                                } else {
+                                    out += '<div style="color:#808080;">No log entries found.</div>';
+                                }
+                                content.html(out);
+                            } catch (e) {
+                                content.html('<div style="color:#f44747;">Error parsing log data.</div>');
+                            }
+                        } else {
+                            content.html('<div style="color:#f44747;">' + (res.data?.message || 'Log file not available.') + '</div>');
+                        }
+                    });
+                });
+
+                $(document).on('click', '#tc-log-close', function() {
+                    $('#tc-log-modal').hide();
+                });
             });
         </script>
+
+        <!-- Shared Log Modal -->
+        <div class="tc-modal-backdrop" id="tc-log-modal">
+            <div class="tc-modal">
+                <div class="tc-modal-header">
+                    <h2 id="tc-log-title">Logs: Order #...</h2>
+                    <button class="tc-modal-close" id="tc-log-close">&times;</button>
+                </div>
+                <div class="tc-modal-body" id="tc-log-content">Loading...</div>
+            </div>
+        </div>
         <?php
     }
 
@@ -922,12 +983,17 @@ class Topup_Central_Admin {
         $order_id = sanitize_text_field( $_POST['order_id'] ?? '' );
         if ( empty( $order_id ) ) wp_send_json_error( array( 'message' => 'Missing Order ID.' ) );
         
-        // Use path from settings
-        $log_dir = get_option( 'topup_nodejs_log_path', dirname( ABSPATH, 2 ) . '/Logs' );
-        $log_file = rtrim( $log_dir, '/\\' ) . '/' . $order_id . '.json';
+        $upload_dir = wp_upload_dir();
+        $log_file = $upload_dir['basedir'] . '/orders/log_' . $order_id . '.json';
+
+        // Fallback to local Logs path (legacy or same-server setup)
+        if ( ! file_exists( $log_file ) ) {
+            $legacy_dir = get_option( 'topup_nodejs_log_path', dirname( ABSPATH, 2 ) . '/Logs' );
+            $log_file = rtrim( $legacy_dir, '/\\' ) . '/' . $order_id . '.json';
+        }
         
         if ( ! file_exists( $log_file ) ) {
-            wp_send_json_error( array( 'message' => "Log file not found on disk. Expected at:\n" . $log_file ) );
+            wp_send_json_error( array( 'message' => "Log file not found. Checked uploads/orders/ and local Logs/ folder." ) );
         }
         
         $json_data = file_get_contents( $log_file );
