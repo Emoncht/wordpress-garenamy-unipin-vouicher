@@ -143,7 +143,10 @@ async function runAutomation(voucher) {
             return null;  // null signals worker.js to defer, not report failure
         }
 
-        for (const proxy of proxies) {
+        // Randomize proxy array to distribute load evenly across all nodes
+        const shuffledProxies = [...proxies].sort(() => 0.5 - Math.random());
+
+        for (const proxy of shuffledProxies) {
             const proxyKey = proxy || 'no_proxy';
 
             // Skip proxies that are on captcha cooldown
