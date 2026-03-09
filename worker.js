@@ -86,8 +86,13 @@ async function browserWorkerLoop(browserId) {
                 result = { status: 'failed', reason: autoErr.message || 'Fatal Node.js crash during automation' };
             }
 
-            // Ensure valid result object
-            if (!result) result = { status: 'failed', reason: 'Unknown error (null result)' };
+            // Fix 4: null means "defer, don't report" (e.g., all proxies on cooldown)
+            if (!result) {
+                await logger.logWarn(voucher.order_id, `Voucher deferred (null result). Releasing claim.`);
+                state.removeClaimedId(voucher.id);
+                // Don't call updateVoucher — dead-lock recovery will reset it to pending
+                continue;
+            }
 
             const status = result.status || 'failed';
             const reason = result.reason || (status === 'failed' ? 'Automation failed unexpectedly.' : 'Completed');
@@ -101,12 +106,16 @@ async function browserWorkerLoop(browserId) {
             });
 
             // 5. Check if THIS worker hit a rate limit (Garena/UniPin block)
-            // If the reason indicates a HTTP 429 or similar captcha block, broadcast it globally
+            // Fix 5: Only broadcast if we're the FIRST worker to detect it
             if (reason && (reason.toLowerCase().includes('rate limit') || reason.toLowerCase().includes('too many requests'))) {
-                console.warn(`[Worker ${browserId}] Detected Rate Limit! Broadcasting to central system.`);
-                state.setGlobalRateLimitActive(true);
-                // Report 1 minute cooldown to all servers
-                await reportRateLimit(SERVER_ID, true, 60, `Auto-detected rate limit by ${SERVER_ID}`);
+                if (!state.getGlobalRateLimitActive()) {
+                    console.warn(`[Worker ${browserId}] Detected Rate Limit! Broadcasting to central system.`);
+                    state.setGlobalRateLimitActive(true);
+                    // Report 1 minute cooldown to all servers
+                    await reportRateLimit(SERVER_ID, true, 60, `Auto-detected rate limit by ${SERVER_ID}`);
+                } else {
+                    console.log(`[Worker ${browserId}] Rate limit already flagged by another worker. Skipping broadcast.`);
+                }
             }
 
             // 6. Report Result to Central API
@@ -159,8 +168,8 @@ async function startWorkerLoops() {
             console.error(`Unhandled error in worker loop ${i + 1}:`, err);
         });
 
-        // Small stagger
-        await sleep(500);
+        // Fix 7: Stagger worker starts to avoid initial claim burst
+        await sleep(2000);
     }
 }
 

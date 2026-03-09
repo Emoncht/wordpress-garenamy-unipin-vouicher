@@ -3,7 +3,7 @@ const { paymentLink, invalidateCachedDatadome } = require("./paymentLink");
 const { processUnipinCheckout } = require('./unipinApi');
 const logger = require('./logger');
 const axios = require('axios');
-const { getNextTopupAllowedAt, setNextTopupAllowedAt, isProxyOnCooldown, setProxyCooldown } = require('./state');
+const { acquireThrottle, isProxyOnCooldown, setProxyCooldown, acquirePlayerLock, setNextTopupAllowedAt } = require('./state');
 
 const getProxies = () => {
     const proxyString = process.env.ROTATING_PROXIES;
@@ -96,111 +96,117 @@ async function checkVoucherStatus(voucher) {
 
 async function runAutomation(voucher) {
     const orderId = voucher.order_id;
-    await logger.initializeOrderLog(orderId, { voucher_id: voucher.id, player_id: voucher.uid, voucher_code: voucher.voucher_code, voucher_denomination: voucher.voucher_denomination });
+    // Fix 3: Acquire per-player lock to prevent concurrent Garena sessions for the same player
+    const releasePlayerLock = await acquirePlayerLock(voucher.uid);
 
-    const proxies = getProxies();
-    let lastError = null;
+    try {
+        await logger.initializeOrderLog(orderId, { voucher_id: voucher.id, player_id: voucher.uid, voucher_code: voucher.voucher_code, voucher_denomination: voucher.voucher_denomination });
 
-    for (const proxy of proxies) {
-        const proxyKey = proxy || 'no_proxy';
+        const proxies = getProxies();
+        let lastError = null;
 
-        // Skip proxies that are on captcha cooldown
-        if (isProxyOnCooldown(proxyKey)) {
-            await logger.logWarn(orderId, `Proxy ${proxyKey} is on captcha cooldown. Skipping.`);
-            continue;
+        // Fix 4: Pre-check — if ALL proxies are on cooldown, defer instead of failing
+        const availableProxies = proxies.filter(p => !isProxyOnCooldown(p || 'no_proxy'));
+        if (availableProxies.length === 0) {
+            await logger.logWarn(orderId, 'All proxies are on captcha cooldown. Deferring voucher.');
+            return null;  // null signals worker.js to defer, not report failure
         }
 
-        // Enforce Rate Limit globally
-        while (true) {
-            const nextAllowedTime = getNextTopupAllowedAt();
-            if (Date.now() >= nextAllowedTime.getTime()) {
-                setNextTopupAllowedAt(new Date(Date.now() + 200));
-                break;
-            } else {
-                await new Promise(resolve => setTimeout(resolve, Math.max(0, nextAllowedTime.getTime() - Date.now())));
+        for (const proxy of proxies) {
+            const proxyKey = proxy || 'no_proxy';
+
+            // Skip proxies that are on captcha cooldown
+            if (isProxyOnCooldown(proxyKey)) {
+                await logger.logWarn(orderId, `Proxy ${proxyKey} is on captcha cooldown. Skipping.`);
+                continue;
             }
-        }
 
-        try {
-            // Pre-check state with external server
-            const preCheckResult = await checkVoucherStatus(voucher);
-            if (preCheckResult.status === 'completed' || preCheckResult.status === 'consumed') {
-                await logger.logInfo(orderId, `Voucher already processed externally. Skipping.`, { external_status: preCheckResult.status });
-                return { status: 'skipped_pre_checked', reason: 'Voucher already completed or consumed.' };
-            }
-        } catch (e) {
-            await logger.logWarn(orderId, 'External pre-check failed. Proceeding with API Topup.', e.message);
-        }
+            // Fix 1: Concurrency-safe throttle (replaces TOCTOU rate limiter)
+            await acquireThrottle();
 
-        // Acquire a virtual slot to restrict concurrency 
-        const slotInfo = await acquireSlot(voucher.id, voucher.order_id);
-        if (!slotInfo) {
-            await logger.logWarn(orderId, 'No available API slot. Will retry.', { voucher_id: voucher.id });
-            return null; // Worker will retry later
-        }
-
-        try {
-            await logger.logInfo(orderId, `Generating payment link via API...`, { proxy: proxy || 'none' });
-
-            // Step 1: Securely fetch Garena Payment Link URL
-            const linkResult = await paymentLink(voucher.uid, proxy, orderId);
-
-            if (linkResult.error) {
-                if (linkResult.error === 'captcha_detected') {
-                    invalidateCachedDatadome(proxyKey); // Delete the poisoned datadome cookie!
-                    setProxyCooldown(proxyKey); // Put this IP on 5-min cooldown
-                    lastError = 'captcha_detected';
-                    await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Token purged. Proxy flagged for 5 min cooldown. Trying next proxy.`);
-                    continue;
+            try {
+                // Pre-check state with external server
+                const preCheckResult = await checkVoucherStatus(voucher);
+                if (preCheckResult.status === 'completed' || preCheckResult.status === 'consumed') {
+                    await logger.logInfo(orderId, `Voucher already processed externally. Skipping.`, { external_status: preCheckResult.status });
+                    return { status: 'skipped_pre_checked', reason: 'Voucher already completed or consumed.' };
                 }
-                throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);
+            } catch (e) {
+                await logger.logWarn(orderId, 'External pre-check failed. Proceeding with API Topup.', e.message);
             }
 
-            await logger.logInfo(orderId, 'Payment link generated successfully. Proceeding to UniPin native API submission...', { payment_url: linkResult.url });
-
-            // Ensure voucher PINs are formatted securely
-            const voucherParts = voucher.voucher_code.split(' ');
-            if (voucherParts.length !== 2) throw new Error('Invalid voucher format. Expected "SERIAL PIN".');
-            const pinBlocks = voucherParts[1].split('-');
-            if (pinBlocks.length !== 4) throw new Error('Invalid PIN format. Expected "1234-5678-9012-3456".');
-
-            const payloadDetails = {
-                denomination: voucher.voucher_denomination,
-                serial: voucherParts[0],
-                pinBlocks: pinBlocks
-            };
-
-            // Step 2: Execute blazing-fast pure HTTP API UniPin Topup
-            const result = await processUnipinCheckout(linkResult.url, payloadDetails, null);
-
-            if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED') {
-                await logger.logWarn(orderId, 'UniPin HTTP 429 Rate Limit Detected. Engaging 35s cooldown.');
-                setNextTopupAllowedAt(new Date(Date.now() + 35000));
-                lastError = 'RATE_LIMIT_DETECTED';
-                continue; // Try next proxy / loop
+            // Acquire a virtual slot to restrict concurrency 
+            const slotInfo = await acquireSlot(voucher.id, voucher.order_id);
+            if (!slotInfo) {
+                await logger.logWarn(orderId, 'No available API slot. Will retry.', { voucher_id: voucher.id });
+                return null; // Worker will retry later
             }
 
-            await logger.logInfo(orderId, `API native checkout completed`, { result_status: result.status, reason: result.reason });
+            try {
+                await logger.logInfo(orderId, `Generating payment link via API...`, { proxy: proxy || 'none' });
 
-            // The API doesn't generate screenshots, return null explicitly
-            return {
-                status: result.status,
-                reason: result.reason,
-                screenshot_base64: null,
-                validated_uid: linkResult.validated_uid,
-                transaction_id: result.status === 'completed' ? 'API-FAST-TRACK' : null
-            };
+                // Step 1: Securely fetch Garena Payment Link URL
+                const linkResult = await paymentLink(voucher.uid, proxy, orderId);
 
-        } catch (error) {
-            await logger.logError(orderId, 'API Checkout Exception', error, { voucher_id: voucher.id });
-            return { status: 'failed', reason: error.message, screenshot_base64: null };
-        } finally {
-            await releaseSlot(slotInfo.browserId);
-            await logger.logInfo(orderId, `Virtual Slot ${slotInfo.browserId} released.`);
+                if (linkResult.error) {
+                    if (linkResult.error === 'captcha_detected') {
+                        invalidateCachedDatadome(proxyKey); // Delete the poisoned datadome cookie!
+                        setProxyCooldown(proxyKey); // Put this IP on 5-min cooldown
+                        lastError = 'captcha_detected';
+                        await logger.logWarn(orderId, `Captcha detected on proxy ${proxyKey}. Token purged. Proxy flagged for 5 min cooldown. Trying next proxy.`);
+                        continue;
+                    }
+                    throw new Error(`Garena Link Gen Failed: ${linkResult.error}`);
+                }
+
+                await logger.logInfo(orderId, 'Payment link generated successfully. Proceeding to UniPin native API submission...', { payment_url: linkResult.url });
+
+                // Ensure voucher PINs are formatted securely
+                const voucherParts = voucher.voucher_code.split(' ');
+                if (voucherParts.length !== 2) throw new Error('Invalid voucher format. Expected "SERIAL PIN".');
+                const pinBlocks = voucherParts[1].split('-');
+                if (pinBlocks.length !== 4) throw new Error('Invalid PIN format. Expected "1234-5678-9012-3456".');
+
+                const payloadDetails = {
+                    denomination: voucher.voucher_denomination,
+                    serial: voucherParts[0],
+                    pinBlocks: pinBlocks
+                };
+
+                // Step 2: Execute blazing-fast pure HTTP API UniPin Topup
+                const result = await processUnipinCheckout(linkResult.url, payloadDetails, proxyKey);
+
+                if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED') {
+                    await logger.logWarn(orderId, 'UniPin HTTP 429 Rate Limit Detected. Engaging 35s cooldown.');
+                    setNextTopupAllowedAt(new Date(Date.now() + 35000));
+                    lastError = 'RATE_LIMIT_DETECTED';
+                    continue; // Try next proxy / loop
+                }
+
+                await logger.logInfo(orderId, `API native checkout completed`, { result_status: result.status, reason: result.reason });
+
+                // The API doesn't generate screenshots, return null explicitly
+                return {
+                    status: result.status,
+                    reason: result.reason,
+                    screenshot_base64: null,
+                    validated_uid: linkResult.validated_uid,
+                    transaction_id: result.status === 'completed' ? 'API-FAST-TRACK' : null
+                };
+
+            } catch (error) {
+                await logger.logError(orderId, 'API Checkout Exception', error, { voucher_id: voucher.id });
+                return { status: 'failed', reason: error.message, screenshot_base64: null };
+            } finally {
+                await releaseSlot(slotInfo.browserId);
+                await logger.logInfo(orderId, `Virtual Slot ${slotInfo.browserId} released.`);
+            }
         }
-    }
 
-    return { status: 'Failed', reason: 'All proxies failed or rate limits exceeded.' };
+        return { status: 'Failed', reason: 'All proxies failed or rate limits exceeded.' };
+    } finally {
+        releasePlayerLock();
+    }
 }
 
 module.exports = { runAutomation, initializeBrowserPool, restartBrowser, getBrowserPool };

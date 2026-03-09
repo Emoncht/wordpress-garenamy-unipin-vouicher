@@ -129,6 +129,9 @@ async function processUnipinCheckout(paymentUrl, voucherDetails, proxy = null) {
             throw new Error(`Could not find a matching denomination radio button for: ${targetDenomText}`);
         }
 
+        // Fix 6: Free the full HTML string from memory now that we've extracted everything
+        html = null;
+
         // Step 3: POST to select denomination
         const denomPostUrl = `https://www.unipin.com/unibox/select_denom/${hash}?lg=en`;
         const denomPayload = new URLSearchParams();

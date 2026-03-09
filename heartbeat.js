@@ -1,7 +1,23 @@
 const { sendHeartbeat, releaseVouchers } = require('./centralApi');
 const state = require('./state');
 
-const SERVER_ID = process.env.SERVER_ID || `srv-${require('os').hostname()}-${process.pid}`;
+const SERVER_ID = process.env.SERVER_ID || (() => {
+    if (process.env.RAILWAY_ENVIRONMENT) return `railway-${process.pid}`;
+    if (process.env.RENDER) return `render-${process.pid}`;
+    if (process.env.HEROKU_APP_ID) return `heroku-${process.pid}`;
+    if (process.env.VERCEL) return `vercel-${process.pid}`;
+    if (process.env.AWS_EXECUTION_ENV) return `aws-${process.pid}`;
+
+    // Hostinger and generic cPanel VPS tend to be harder to detect securely, 
+    // but they often set specific PWD or USER variables.
+    const user = process.env.USER || process.env.USERNAME || 'unknown';
+    const pwd = process.env.PWD || process.cwd();
+
+    if (pwd.includes('hostinger') || user.includes('hostinger')) return `hostinger-${process.pid}`;
+
+    // Fallback to local machine or unknown VPS
+    return `server-${require('os').hostname()}-${process.pid}`;
+})();
 const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds
 
 let heartbeatTimer = null;

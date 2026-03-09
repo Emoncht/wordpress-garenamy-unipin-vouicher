@@ -26,6 +26,45 @@ function invalidateCachedDatadome(proxyKey) {
     datadomeCacheMap.delete(proxyKey);
 }
 
+// --- Per-proxy regeneration lock (Fix 2) ---
+// Prevents thundering herd: only one worker regenerates the cookie per proxy,
+// others wait for the same result.
+const datadomeRegenerationLocks = new Map();
+
+/**
+ * Get or regenerate a DataDome cookie. If another worker is already
+ * regenerating for the same proxy, wait for that result instead of
+ * firing a duplicate request.
+ */
+async function getOrRegenerateDatadome(url, orderId, proxyKey) {
+    // 1. Check cache (fast path)
+    const cached = getCachedDatadome(proxyKey);
+    if (cached) {
+        console.log(`--- DataDome cookie served from cache (key: ${proxyKey}) ---`);
+        await logger.logInfo(orderId, 'DataDome cookie served from cache', { proxyKey });
+        return cached;
+    }
+
+    // 2. Check if another worker is already regenerating
+    const existingLock = datadomeRegenerationLocks.get(proxyKey);
+    if (existingLock) {
+        console.log(`[DataDome] Worker waiting for in-flight regeneration (proxy: ${proxyKey})`);
+        return existingLock;
+    }
+
+    // 3. This worker becomes the regenerator
+    const regenerationPromise = (async () => {
+        try {
+            return await _rawDatadomeGenerate(url, orderId, proxyKey);
+        } finally {
+            datadomeRegenerationLocks.delete(proxyKey);
+        }
+    })();
+
+    datadomeRegenerationLocks.set(proxyKey, regenerationPromise);
+    return regenerationPromise;
+}
+
 const RETRY_COUNT = 3;
 const RETRY_DELAY = 2000; // 2 seconds
 
@@ -209,14 +248,7 @@ const generateFingerprint = () => {
     };
 };
 
-const datadomeTest = async (url, orderId, proxyKey = 'no_proxy') => {
-    // Check cache first
-    const cached = getCachedDatadome(proxyKey);
-    if (cached) {
-        console.log(`--- DataDome cookie served from cache (key: ${proxyKey}) ---`);
-        await logger.logInfo(orderId, 'DataDome cookie served from cache', { proxyKey });
-        return cached;
-    }
+const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
 
     console.log("--- Generating fresh DataDome cookie ---");
     const fp = generateFingerprint();
@@ -286,7 +318,7 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
     const loginUrl = 'https://shop.garena.my/api/auth/player_id_login';
     const proxyKey = proxy || 'no_proxy';
     console.log(`--- [1] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
-    const datadomeCookie = await datadomeTest(loginUrl, orderId, proxyKey);
+    const datadomeCookie = await getOrRegenerateDatadome(loginUrl, orderId, proxyKey);
     if (!datadomeCookie) {
         console.error("Stopping: Failed to generate DataDome cookie.");
         await logger.logError(orderId, 'Stopping: Failed to generate DataDome cookie', null, { step: 'getGarenaSession' });

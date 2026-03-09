@@ -9,7 +9,8 @@ const apiClient = axios.create({
     baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',
-        'x-api-key': API_KEY
+        'x-api-key': API_KEY,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     },
     timeout: 30000 // 30 second timeout
 });
@@ -46,7 +47,11 @@ async function claimVouchers(serverId, maxVouchers = 1) {
         }));
         return response.data;
     } catch (error) {
-        console.error(`[CentralAPI] Error claiming vouchers:`, error.message);
+        if (error.response && error.response.status === 403) {
+            console.error('[CentralAPI] Error claiming vouchers: 403 Forbidden. Is a WAF blocking the worker? Payload:', error.response.data);
+        } else {
+            console.error(`[CentralAPI] Error claiming vouchers:`, error.message);
+        }
         return { status: false, vouchers: [], claimed_count: 0 };
     }
 }

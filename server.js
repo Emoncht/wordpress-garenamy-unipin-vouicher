@@ -8,8 +8,7 @@ const { getBrowserPool } = require('./topup');
 const { startHeartbeatLoop, setupShutdownHandlers } = require('./heartbeat');
 
 const app = express();
-const PORT = Number(process.env.PORT);
-if (!PORT) throw new Error('PORT env missing');
+const PORT = Number(process.env.PORT) || 0;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
@@ -82,8 +81,8 @@ app.get('/queue-status', isAuthenticated, (req, res) => {
 // Setup Graceful Shutdown
 setupShutdownHandlers();
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on 0.0.0.0:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on 0.0.0.0:${server.address().port}`);
 });
 
 // Start background processes independently from the Express server binding
