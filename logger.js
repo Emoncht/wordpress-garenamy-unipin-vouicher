@@ -147,6 +147,40 @@ class OrderLogger {
         await this.log(orderId, 'debug', message, data);
     }
 
+    async pruneOldLogs(maxFiles = 100) {
+        try {
+            const files = await fs.readdir(this.logsDir);
+            const jsonFiles = files.filter(f => f.endsWith('.json'));
+            if (jsonFiles.length <= maxFiles) return;
+
+            // Get stats and sort by modification time (oldest first)
+            const fileStats = await Promise.all(jsonFiles.map(async f => {
+                const fullPath = path.join(this.logsDir, f);
+                try {
+                    const stat = await fs.stat(fullPath);
+                    return { file: fullPath, mtime: stat.mtimeMs };
+                } catch (e) {
+                    return null;
+                }
+            }));
+
+            const validStats = fileStats.filter(s => s !== null);
+            validStats.sort((a, b) => a.mtime - b.mtime);
+
+            // Delete oldest files beyond the limit
+            const toDelete = validStats.slice(0, validStats.length - maxFiles);
+            for (const { file } of toDelete) {
+                try {
+                    await fs.unlink(file);
+                } catch (e) {
+                    // Ignore individual file deletion errors in background task
+                }
+            }
+        } catch (error) {
+            console.error('[Logger] Failed to prune old logs:', error.message);
+        }
+    }
+
     async finalizeOrderLog(orderId, finalStatus, summary = {}) {
         const logFilePath = this.getLogFilePath(orderId);
         const release = await this.acquireTaskLock(orderId);
@@ -160,6 +194,9 @@ class OrderLogger {
             logFileContent.summary = summary;
 
             await fs.writeFile(logFilePath, JSON.stringify(logFileContent, null, 2));
+
+            // Prune old logs to keep disk usage low on ephemeral Koyeb instances
+            await this.pruneOldLogs(100);
 
             this.log(orderId, 'info', 'Order processing completed', {
                 final_status: finalStatus,

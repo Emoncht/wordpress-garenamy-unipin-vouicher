@@ -100,6 +100,11 @@ function topup_central_install() {
     
     // Default config
     add_option('topup_central_api_key', 'CHANGE_ME_IN_ADMIN_PANEL');
+    
+    // Guess default Node.js log path relative to WP standard structure if possible
+    // Assumes WP is in htdocs/www and Node is parallel, adjust default as needed
+    $default_log_path = dirname( ABSPATH, 2 ) . '/Logs'; 
+    add_option('topup_nodejs_log_path', $default_log_path);
 }
 register_activation_hook( __FILE__, 'topup_central_install' );
 

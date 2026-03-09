@@ -19,6 +19,7 @@ class Topup_Central_Admin {
         add_action( 'wp_ajax_topup_get_analytics', array( $this, 'ajax_get_analytics' ) );
         add_action( 'wp_ajax_topup_get_orders', array( $this, 'ajax_get_orders' ) );
         add_action( 'wp_ajax_topup_get_order_detail', array( $this, 'ajax_get_order_detail' ) );
+        add_action( 'wp_ajax_topup_get_order_log', array( $this, 'ajax_get_order_log' ) );
         add_action( 'wp_ajax_topup_admin_control', array( $this, 'ajax_admin_control' ) );
     }
 
@@ -64,10 +65,36 @@ class Topup_Central_Admin {
             .tc-chart-bar::after { content: attr(data-val); position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #646970; opacity: 0; transition: opacity 0.2s; }
             .tc-chart-bar:hover::after { opacity: 1; }
             
-            .tc-filters { margin-bottom: 20px; display: flex; gap: 10px; }
+            .tc-filters { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
             .tc-pagination { margin-top: 15px; text-align: right; }
+            
+            /* Modal Styles */
+            .tc-modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 99999; justify-content: center; align-items: center; }
+            .tc-modal { background: #1e1e1e; color: #d4d4d4; width: 90%; max-width: 900px; max-height: 85vh; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); display: flex; flex-direction: column; font-family: Consolas, Monaco, monospace; }
+            .tc-modal-header { padding: 15px 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #252526; border-radius: 8px 8px 0 0; }
+            .tc-modal-header h2 { margin: 0; color: #fff; font-size: 16px; font-weight: normal; }
+            .tc-modal-close { cursor: pointer; color: #a5a5a5; font-size: 24px; line-height: 1; border: none; background: transparent; padding: 0; }
+            .tc-modal-close:hover { color: #fff; }
+            .tc-modal-body { padding: 20px; overflow-y: auto; flex: 1; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+            .tc-log-line { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #2d2d2d; }
+            .tc-log-time { color: #569cd6; }
+            .tc-log-lvl-info { color: #4ec9b0; font-weight: bold; }
+            .tc-log-lvl-warn { color: #d7ba7d; font-weight: bold; }
+            .tc-log-lvl-error { color: #f44747; font-weight: bold; }
+            .tc-log-lvl-debug { color: #808080; }
+            
+            /* Mobile Responsiveness */
+            .tc-table-wrapper { width: 100%; overflow-x: auto; border: 1px solid #ccd0d4; margin-top: 15px; }
+            .tc-table-wrapper table { border: none; margin-top: 0 !important; }
+            
             @media (max-width: 900px) {
                 .tc-analytics-grid { grid-template-columns: 1fr !important; }
+            }
+            @media (max-width: 782px) {
+                .tc-grid { grid-template-columns: 1fr !important; }
+                .tc-card { padding: 15px; }
+                .tc-filters input, .tc-filters select { width: 100% !important; max-width: none; }
+                .tc-filters { flex-direction: column; }
             }
         ' );
     }
@@ -440,24 +467,35 @@ class Topup_Central_Admin {
                 <button class="button" id="btn-search">Search</button>
             </div>
 
-            <table class="wp-list-table widefat striped">
-                <thead>
-                    <tr>
-                        <th>Order ID</th>
-                        <th>Created At</th>
-                        <th>Status</th>
-                        <th>Vouchers</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="orders-tbody">
-                    <tr><td colspan="5">Loading orders...</td></tr>
-                </tbody>
-            </table>
+            <div class="tc-table-wrapper">
+                <table class="wp-list-table widefat striped">
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Created At</th>
+                            <th>Status</th>
+                            <th>Vouchers</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-tbody">
+                        <tr><td colspan="5">Loading orders...</td></tr>
+                    </tbody>
+                </table>
+            </div>
             
             <div class="tc-pagination" id="orders-pagination"></div>
 
-            <!-- Modal for Drilldown (Simple inline toggle for now) -->
+            <!-- Modal for Log Drilldown -->
+            <div class="tc-modal-backdrop" id="tc-log-modal">
+                <div class="tc-modal">
+                    <div class="tc-modal-header">
+                        <h2 id="tc-log-title">Logs: Order #...</h2>
+                        <button class="tc-modal-close" id="tc-log-close">&times;</button>
+                    </div>
+                    <div class="tc-modal-body" id="tc-log-content">Loading...</div>
+                </div>
+            </div>
         </div>
 
         <script>
@@ -488,6 +526,7 @@ class Topup_Central_Admin {
                                             <td><span class="tc-badge ${o.status}">${o.status}</span></td>
                                             <td>
                                                 <button class="button button-small btn-view" data-id="${o.order_id}">View Vouchers</button>
+                                                <button class="button button-small btn-log" data-id="${o.order_id}" style="margin-left:4px;">View Log</button>
                                                 <button class="button button-small btn-delete" data-id="${o.order_id}" style="color:#d63638; border-color:#d63638; margin-left:4px;">Delete</button>
                                             </td>
                                         </tr>
@@ -531,9 +570,59 @@ class Topup_Central_Admin {
                             });
                             dHtml += '</tbody></table>';
                             row.find('.details-cell').html(dHtml);
+                             row.find('.details-cell').html(dHtml);
                         }
                     });
                 });
+
+                // JSON Log Viewer logic
+                $(document).on('click', '.btn-log', function() {
+                    const id = $(this).data('id');
+                    const modal = $('#tc-log-modal');
+                    const content = $('#tc-log-content');
+                    
+                    $('#tc-log-title').text(`Logs: Order ${id}`);
+                    content.html('Loading log file remotely...');
+                    modal.css('display', 'flex');
+                    
+                    $.post(ajaxurl, { action: 'topup_get_order_log', order_id: id }, function(res) {
+                        if(res.success && res.data) {
+                            try {
+                                const logData = res.data;
+                                let out = `<div style="color:#a5a5a5; margin-bottom:15px;">Target: ${logData.order_data?.player_id || 'Unknown UID'} | Created at: ${logData.created_at}</div>`;
+                                
+                                if (logData.logs && logData.logs.length > 0) {
+                                    logData.logs.forEach(l => {
+                                        const lvlStr = (l.level || 'INFO').toLowerCase();
+                                        const timeStr = l.timestamp ? l.timestamp.replace('T', ' ').substring(0, 19) : '';
+                                        let metaStr = '';
+                                        
+                                        // Inline metadata cleanly
+                                        if (l.data && typeof l.data === 'object' && Object.keys(l.data).length > 0) {
+                                            metaStr = ` <span style="color:#9cdcfe;">${JSON.stringify(l.data)}</span>`;
+                                        }
+                                        
+                                        out += `<div class="tc-log-line">
+                                            <span class="tc-log-time">[${timeStr}]</span> 
+                                            <span class="tc-log-lvl-${lvlStr}">[${l.level}]</span> 
+                                            ${l.message}${metaStr}
+                                        </div>`;
+                                    });
+                                } else {
+                                    out += '<div>No log entries found.</div>';
+                                }
+                                content.html(out);
+                            } catch(e) {
+                                content.html(`<div style="color:#f44747;">Parse Error: ${e.message}</div>`);
+                            }
+                        } else {
+                            content.html(`<div style="color:#d7ba7d;">${res.data?.message || 'Error occurred while fetching logs.'}</div>`);
+                        }
+                    });
+                });
+
+                $('#tc-log-close').click(() => $('#tc-log-modal').hide());
+                $('#tc-log-modal').click((e) => { if(e.target === e.currentTarget) $('#tc-log-modal').hide(); });
 
                 $(document).on('click', '.btn-delete', function() {
                     const id = $(this).data('id');
@@ -825,6 +914,30 @@ class Topup_Central_Admin {
             ARRAY_A
         );
         wp_send_json_success( $vouchers ?: array() );
+    }
+
+    public function ajax_get_order_log() {
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error();
+        
+        $order_id = sanitize_text_field( $_POST['order_id'] ?? '' );
+        if ( empty( $order_id ) ) wp_send_json_error( array( 'message' => 'Missing Order ID.' ) );
+        
+        // Use path from settings
+        $log_dir = get_option( 'topup_nodejs_log_path', dirname( ABSPATH, 2 ) . '/Logs' );
+        $log_file = rtrim( $log_dir, '/\\' ) . '/' . $order_id . '.json';
+        
+        if ( ! file_exists( $log_file ) ) {
+            wp_send_json_error( array( 'message' => "Log file not found on disk. Expected at:\n" . $log_file ) );
+        }
+        
+        $json_data = file_get_contents( $log_file );
+        $decoded = json_decode( $json_data, true );
+        
+        if ( json_last_error() !== JSON_ERROR_NONE ) {
+            wp_send_json_error( array( 'message' => "Log file exists but contains invalid or corrupted JSON." ) );
+        }
+        
+        wp_send_json_success( $decoded );
     }
 
     public function ajax_admin_control() {

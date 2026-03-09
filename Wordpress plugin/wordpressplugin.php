@@ -8,14 +8,6 @@ Author: Your Name
 Author URI: https://example.com/
 */
 
-// Declare WooCommerce HPOS + Product Cache compatibility (Fix 1)
-add_action( 'before_woocommerce_init', function() {
-    if ( class_exists( '\Automattic\WooCommerce\Utilities\FeaturesUtil' ) ) {
-        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
-        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'product_instance_caching', __FILE__, true );
-    }
-} );
-
 // Global variables for database version and table name
 global $custom_order_plugin_db_version;
 $custom_order_plugin_db_version = '1.0';
@@ -268,23 +260,38 @@ foreach ($vouchers as $index => $voucher) {
     $voucher_code     = sanitize_text_field($voucher['voucher_code']);
     $used_time        = sanitize_text_field($voucher['used_time']);
     $transaction_id   = sanitize_text_field($voucher['transaction_id']);
-    $screenshot       = sanitize_text_field($voucher['screenshot']);
+    $raw_data         = $voucher['screenshot'] ?? ''; // May contain screenshot OR json log
     $time_taken       = isset($voucher['timetaken']) ? sanitize_text_field($voucher['timetaken']) : 'N/A';
 
     $existing = custom_order_plugin_get_voucher_record($order_id, $voucher_code);
 
-    // Prepare new screenshot URL if provided
+    // Prepare directory for uploads
+    $upload_dir = wp_upload_dir();
+    $orders_dir = $upload_dir['basedir'] . '/orders';
+    if (!file_exists($orders_dir)) {
+        mkdir($orders_dir, 0755, true);
+    }
+
     $new_screenshot_url = '';
-    if (!empty($screenshot)) {
-        $upload_dir = wp_upload_dir();
-        $orders_dir = $upload_dir['basedir'] . '/orders';
-        if (!file_exists($orders_dir)) {
-            mkdir($orders_dir, 0755, true);
+    $new_json_url = '';
+
+    if (!empty($raw_data)) {
+        $decoded = base64_decode($raw_data, true);
+        if ($decoded !== false) {
+            // Smart detection: try to parse as JSON
+            $json_test = json_decode($decoded, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($json_test)) {
+                // It's a JSON log file
+                $json_filename = 'log_' . $response_order_id . '_' . $voucher_code . '.json';
+                file_put_contents($orders_dir . '/' . $json_filename, $decoded);
+                $new_json_url = $upload_dir['baseurl'] . '/orders/' . $json_filename;
+            } else {
+                // It's a legacy screenshot image
+                $img_filename = 'screenshot_' . $response_order_id . '_' . uniqid() . '.jpg';
+                file_put_contents($orders_dir . '/' . $img_filename, $decoded);
+                $new_screenshot_url = $upload_dir['baseurl'] . '/orders/' . $img_filename;
+            }
         }
-        $filename = 'screenshot_' . $response_order_id . '_' . uniqid() . '.jpg';
-        $screenshot_path = $orders_dir . '/' . $filename;
-        file_put_contents($screenshot_path, base64_decode($screenshot));
-        $new_screenshot_url = $upload_dir['baseurl'] . '/orders/' . $filename;
     }
 
     if ($existing) {
@@ -357,7 +364,12 @@ foreach ($vouchers as $index => $voucher) {
     }
 
     // Append voucher details to the order note.
-    $note_content .= "\nVoucher " . ($index + 1) . ":\n  Status: $stored_status\n  Voucher Code: `$voucher_code`\n  Time Taken: $time_taken\n  Used Time: $stored_used_time\n  Transaction ID: $stored_transaction_id\n  Screenshot: <a href='$stored_screenshot_url' target='_blank'>View Screenshot</a>\n";
+    $note_content .= "\nVoucher " . ($index + 1) . ":\n  Status: $stored_status\n  Voucher Code: `$voucher_code`\n  Time Taken: $time_taken\n  Used Time: $stored_used_time\n  Transaction ID: $stored_transaction_id\n";
+    if (!empty($new_json_url)) {
+        $note_content .= "  Log Data: <a href='$new_json_url' target='_blank'>View JSON Log</a>\n";
+    } elseif (!empty($stored_screenshot_url)) {
+        $note_content .= "  Screenshot: <a href='$stored_screenshot_url' target='_blank'>View Screenshot</a>\n";
+    }
 }
 
 // After processing each voucher and appending details to $note_content
@@ -465,33 +477,26 @@ function custom_order_plugin_filter_payload($order_id, $payload) {
    Resend Payload Function – used for bulk action and scheduled calls
 -------------------------------------------------- */
 function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
-    // Fix 2: Load order once via HPOS-compatible API for all meta operations.
-    $order = wc_get_order( $order_id );
-    if ( ! $order ) {
-        return;
-    }
-
     // Limit resend attempts to a maximum of 10 per order, but only for scheduled (non-bulk) resends.
     if (!$is_bulk) {
-        $resend_attempts = $order->get_meta( '_resend_attempts', true );
+        $resend_attempts = get_post_meta($order_id, '_resend_attempts', true);
         $resend_attempts = empty($resend_attempts) ? 0 : intval($resend_attempts);
         if ($resend_attempts >= 10) {
+            $order = wc_get_order($order_id);
             $order->add_order_note('Maximum resend attempts reached for this order.');
             return;
         }
     }
-
+    
     // Check if this order is already being processed.
-    if ( $order->get_meta( '_resend_processing', true ) === '1' ) {
+    if ( get_post_meta($order_id, '_resend_processing', true) === '1' ) {
         return;
     }
-    $order->update_meta_data( '_resend_processing', '1' );
-    $order->save();
-
-    $stored_payload = $order->get_meta( '_unipin_order_payload', true );
+    update_post_meta($order_id, '_resend_processing', '1');
+    
+    $stored_payload = get_post_meta($order_id, '_unipin_order_payload', true);
     if (empty($stored_payload)) {
-        $order->delete_meta_data( '_resend_processing' );
-        $order->save();
+        delete_post_meta($order_id, '_resend_processing');
         return;
     }
     
@@ -500,7 +505,7 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
     $server_url_2 = get_option('unipin_voucher_server_url_2', '');
     
     list($filtered_payload, $already_processed) = custom_order_plugin_filter_payload($order_id, $stored_payload);
-    // $order already loaded above (HPOS-compatible)
+    $order = wc_get_order($order_id);
     
     // Check if all vouchers have been processed.
     $all_vouchers = true;
@@ -527,8 +532,7 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
         $order->add_order_note($note_content, false);
         // Update order status as completed if all vouchers are processed.
         $order->update_status('completed', 'Order status updated to completed as all vouchers are processed.');
-        $order->delete_meta_data( '_resend_processing' );
-        $order->save();
+        delete_post_meta($order_id, '_resend_processing');
         return;
     } else {
         if (!empty($already_processed)) {
@@ -568,8 +572,7 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
         if (empty($available_servers)) {
             // Log error and exit if no servers are available
             $order->add_order_note('Error: No server URLs configured for resending payload.');
-            $order->delete_meta_data( '_resend_processing' );
-            $order->save();
+            delete_post_meta($order_id, '_resend_processing');
             return;
         }
 
@@ -620,11 +623,10 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
     // Only track resend attempts for scheduled (non-bulk) resends.
     if (!$is_bulk) {
         $resend_attempts++;
-        $order->update_meta_data( '_resend_attempts', $resend_attempts );
+        update_post_meta($order_id, '_resend_attempts', $resend_attempts);
     }
     // Clear the processing flag.
-    $order->delete_meta_data( '_resend_processing' );
-    $order->save();
+    delete_post_meta($order_id, '_resend_processing');
 }
 
 /* -------------------------------------------------
@@ -634,11 +636,7 @@ function custom_order_plugin_add_resend_payload_bulk_action($bulk_actions) {
     $bulk_actions['resend_payload'] = __('Resend Payload', 'custom-order-plugin');
     return $bulk_actions;
 }
-// Fix 4: Register bulk action hooks on both legacy and HPOS order screens.
-foreach ( array( 'edit-shop_order', 'woocommerce_page_wc-orders' ) as $_screen ) {
-    add_filter( "bulk_actions-{$_screen}", 'custom_order_plugin_add_resend_payload_bulk_action' );
-    add_filter( "handle_bulk_actions-{$_screen}", 'custom_order_plugin_handle_resend_payload_bulk_action', 10, 3 );
-}
+add_filter('bulk_actions-edit-shop_order', 'custom_order_plugin_add_resend_payload_bulk_action');
 
 function custom_order_plugin_handle_resend_payload_bulk_action($redirect_to, $action, $post_ids) {
     if ($action !== 'resend_payload') {
@@ -650,6 +648,7 @@ function custom_order_plugin_handle_resend_payload_bulk_action($redirect_to, $ac
     $redirect_to = add_query_arg('resent_payload', count($post_ids), $redirect_to);
     return $redirect_to;
 }
+add_filter('handle_bulk_actions-edit-shop_order', 'custom_order_plugin_handle_resend_payload_bulk_action', 10, 3);
 
 function custom_order_plugin_display_resend_payload_notice() {
     if (!empty($_REQUEST['resent_payload'])) {
@@ -665,17 +664,22 @@ add_action('admin_notices', 'custom_order_plugin_display_resend_payload_notice')
 
 function custom_order_plugin_resend_payload_cron() {
     // Use a transient lock to ensure only one instance runs at a time.
-    if ( get_transient( 'custom_order_plugin_resend_lock' ) ) {
+    if ( get_transient('custom_order_plugin_resend_lock') ) {
         return; // Another cron run is already processing
     }
     // Set the lock for slightly longer than your cron interval (5 minutes)
-    set_transient( 'custom_order_plugin_resend_lock', true, 6 * 60 );
+    set_transient('custom_order_plugin_resend_lock', true, 6 * 60);
 
-    // Fix 3: Use wc_get_orders() instead of WP_Query so HPOS orders are found.
-    $order_ids = wc_get_orders( array(
-        'status'      => array( 'loading', 'resending' ),
-        'date_before' => gmdate( 'Y-m-d H:i:s', strtotime( '-5 minutes' ) ),
-        'meta_query'  => array(
+    // Build a WP_Query to grab the oldest 5 orders matching your criteria:
+    $args = array(
+        'post_type'      => 'shop_order',
+        'post_status'    => array('wc-loading', 'loading', 'wc-resending', 'resending'),
+        'date_query'     => array(
+            array(
+                'before' => '5 minutes ago',
+            ),
+        ),
+        'meta_query'     => array(
             'relation' => 'AND',
             array(
                 'key'     => '_unipin_order_payload',
@@ -694,18 +698,25 @@ function custom_order_plugin_resend_payload_cron() {
                 ),
             ),
         ),
-        'limit'   => 5,
-        'orderby' => 'date',
-        'order'   => 'ASC',
-        'return'  => 'ids',
-    ) );
+        'posts_per_page' => 5,  // Only grab the oldest 5 orders
+        'orderby'        => 'date',
+        'order'          => 'ASC',
+    );
 
-    foreach ( $order_ids as $order_id ) {
-        custom_order_plugin_resend_payload( $order_id, false );
+    $query = new WP_Query($args);
+
+    // Process each matching order.
+    if ($query->have_posts()) {
+        while ($query->have_posts()) {
+            $query->the_post();
+            $order_id = get_the_ID();
+            custom_order_plugin_resend_payload($order_id, false);
+        }
+        wp_reset_postdata();
     }
 
     // Release the transient lock so next cron run can proceed.
-    delete_transient( 'custom_order_plugin_resend_lock' );
+    delete_transient('custom_order_plugin_resend_lock');
 }
 
 

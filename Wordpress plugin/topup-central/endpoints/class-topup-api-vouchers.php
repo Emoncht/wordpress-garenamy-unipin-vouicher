@@ -28,6 +28,16 @@ class Topup_API_Vouchers {
         // Limit maximum claim size
         $limit = min( max( 1, $limit ), 10 );
 
+        // 0. Check if Queue is Paused by Admin
+        if ( get_option( 'topup_queue_paused', 'no' ) === 'yes' ) {
+            return new WP_REST_Response( array(
+                'status'        => true,
+                'vouchers'      => array(),
+                'claimed_count' => 0,
+                'message'       => 'Queue is currently paused by administrator.'
+            ), 200 );
+        }
+
         // Attempt atomic claim using FOR UPDATE SKIP LOCKED
         $wpdb->query( 'START TRANSACTION' );
 

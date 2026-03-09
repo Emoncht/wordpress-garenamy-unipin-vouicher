@@ -120,11 +120,25 @@ async function browserWorkerLoop(browserId) {
                 status: status,
                 transaction_id: result.transaction_id || null,
                 validated_uid: result.validated_uid || null,
-                screenshot_base64: result.screenshot_base64 || null,
+                screenshot_base64: null, // Set below
                 reason: reason,
                 // If it failed due to an invalid ID, don't let it retry
                 retry: (status === 'failed' && (!reason || (!reason.toLowerCase().includes('invalid player id') && !reason.toLowerCase().includes('invalid_id'))))
             };
+
+            // Attach JSON log as base64 (replaces screenshot for smart detection)
+            try {
+                const logData = await logger.getOrderLogs(voucher.order_id);
+                if (logData) {
+                    updatePayload.screenshot_base64 = Buffer.from(JSON.stringify(logData)).toString('base64');
+                } else if (result.screenshot_base64) {
+                    // Fallback to legacy screenshot if log doesn't exist for some reason
+                    updatePayload.screenshot_base64 = result.screenshot_base64;
+                }
+            } catch (logErr) {
+                console.error(`[Worker ${browserId}] Failed to read log for order ${voucher.order_id}:`, logErr.message);
+                updatePayload.screenshot_base64 = result.screenshot_base64 || null; // Fallback
+            }
 
             try {
                 const updateRes = await updateVoucher(SERVER_ID, updatePayload);
