@@ -5,7 +5,7 @@ const state = require('./state');
 const { claimVouchers, updateVoucher, reportRateLimit } = require('./centralApi');
 const { SERVER_ID } = require('./heartbeat');
 
-const BROWSER_CONCURRENCY = parseInt(process.env.BROWSER_CONCURRENCY || '1', 10);
+const BROWSER_CONCURRENCY = parseInt(process.env.BROWSER_CONCURRENCY || '5', 10);
 const AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per voucher
 let isBrowserPoolInitialized = false;
 
