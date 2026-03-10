@@ -3,6 +3,35 @@ const https = require('https');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const querystring = require('querystring');
 const logger = require('./logger');
+const fs = require('fs');
+const path = require('path');
+
+// --- Residential Proxy Pool (high-quality, used ONLY for DataDome + login) ---
+let cachedResidentialProxies = null;
+function getResidentialProxies() {
+    if (cachedResidentialProxies) return cachedResidentialProxies;
+    try {
+        const filePath = path.join(__dirname, 'residentialproxy.txt');
+        const content = fs.readFileSync(filePath, 'utf8');
+        cachedResidentialProxies = content.split('\n').map(p => p.trim()).filter(p => p.length > 0 && !p.startsWith('#'));
+        if (cachedResidentialProxies.length > 0) {
+            console.log(`[ResProxy] Loaded ${cachedResidentialProxies.length} residential proxies`);
+            return cachedResidentialProxies;
+        }
+    } catch (e) {
+        console.warn('[ResProxy] Failed to load residentialproxy.txt:', e.message);
+    }
+    cachedResidentialProxies = [];
+    return cachedResidentialProxies;
+}
+
+function pickRandomResidentialProxy() {
+    const proxies = getResidentialProxies();
+    if (proxies.length === 0) return null;
+    const proxy = proxies[Math.floor(Math.random() * proxies.length)];
+    // Add http:// prefix if missing
+    return proxy.startsWith('http') ? proxy : `http://${proxy}`;
+}
 
 // --- DataDome Cookie Cache ---
 // Key: proxy string (or 'no_proxy'), Value: { cookie: string, createdAt: number }
@@ -89,8 +118,7 @@ async function withRetries(fn, operationName, orderId) {
 
 const agent = new https.Agent({
     keepAlive: true,
-    rejectUnauthorized: false,
-    secureProtocol: 'TLSv1_2_method'
+    rejectUnauthorized: false
 });
 
 function sanitizeHeaders(headers) {
@@ -179,10 +207,16 @@ const generateFingerprint = () => {
     const mp_tr = mouseMoves > 0;                          // tracking active
     const mm_md = 200 + Math.floor(Math.random() * 1500);  // mouse movement duration ms
 
+    // Randomize modern Chrome version to prevent static User-Agent block listing
+    const chromeVersions = [134, 135, 136, 137, 138];
+    const chromeVersion = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
+    const userAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`;
+    const secChUa = `"Google Chrome";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not A(Brand";v="24"`;
+
     return {
         jsData: {
-            // Plugin detection
-            "plg": 0, "plgod": false, "plgne": "NA", "plgre": "NA", "plgof": "NA",
+            // Plugin detection (Must be >0 since we list plugins below)
+            "plg": 5, "plgod": false, "plgne": "NA", "plgre": "NA", "plgof": "NA",
             "plggt": "NA", "pltod": false,
 
             // Browser dimensions (randomized from pool)
@@ -204,8 +238,8 @@ const generateFingerprint = () => {
             // Screen resolution (randomized from pool)
             "rs_h": res.h, "rs_w": res.w, "rs_cd": 24,
 
-            // User agent
-            "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+            // User agent (Randomized)
+            "ua": userAgent,
 
             // Language & locale
             "lg": "en-US", "pr": 1,
@@ -243,7 +277,7 @@ const generateFingerprint = () => {
             // Build ID
             "bid": "NA",
 
-            // MIME types & plugins
+            // MIME types & plugins (Contains 5 plugins, so plg=5)
             "mmt": "application/pdf", "plu": "PDF Viewer,Chrome PDF Viewer,Chromium PDF Viewer,Microsoft Edge PDF Viewer,WebKit built-in PDF",
 
             // Features
@@ -293,11 +327,25 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
         "ddv": "5.4.0"
     };
 
+    // Reconstruct generated UserAgent and secChUa based on matched Chrome version from fingerprint
+    const matchedUA = fp.jsData.ua;
+    const matchedVersion = matchedUA.match(/Chrome\/(\d+)\./)[1];
+    const matchedSecChUa = `"Google Chrome";v="${matchedVersion}", "Chromium";v="${matchedVersion}", "Not A(Brand";v="24"`;
+
     const requestHeaders = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+        "User-Agent": matchedUA,
         "Origin": new URL(url).origin,
         "Referer": url,
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Ch-Ua": matchedSecChUa,
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site"
     };
 
     try {
@@ -358,78 +406,29 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
  */
 const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInvalidation = false) => {
     const loginUrl = 'https://shop.garena.my/api/auth/player_id_login';
-    const proxyKey = proxy || 'no_proxy';
 
-    // Create a shared httpsAgent for all requests in this session
-    const sessionAgent = proxyKey !== 'no_proxy' ? new HttpsProxyAgent(proxyKey) : undefined;
+    // Pick a high-quality residential proxy for DataDome + login only
+    const resProxy = pickRandomResidentialProxy();
+    const proxyKey = resProxy || 'no_proxy';
+    const sessionAgent = resProxy ? new HttpsProxyAgent(resProxy) : undefined;
 
     let proxyExitIp = 'Unknown';
-    if (proxyKey !== 'no_proxy') {
+    if (sessionAgent) {
         try {
             const ipRes = await axios.get('https://api.ipify.org?format=json', {
                 httpsAgent: sessionAgent,
                 timeout: 8000
             });
             proxyExitIp = ipRes.data.ip;
-            console.log(`[Proxy] Using exit IP: ${proxyExitIp}`);
-            await logger.logInfo(orderId, `Assigned Proxy Exit IP`, { exit_ip: proxyExitIp, proxy_key: proxyKey });
+            console.log(`[ResProxy] Using residential exit IP: ${proxyExitIp}`);
+            await logger.logInfo(orderId, `Residential Proxy Exit IP`, { exit_ip: proxyExitIp });
         } catch (e) {
-            console.log(`[Proxy] Failed to resolve exit IP from ${proxyKey.split('@').pop() || proxyKey}`);
+            console.log(`[ResProxy] Failed to resolve exit IP`);
         }
     }
 
-    // ========== STEP 1: Homepage Pre-Fetch (warm the proxy IP) ==========
-    console.log(`--- [1] Warming proxy with homepage fetch... ---`);
-    try {
-        const homepageHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-GB,en;q=0.9',
-            'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not A(Brand";v="24"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-        };
-        const homepageConfig = { headers: homepageHeaders, timeout: 10000, validateStatus: (s) => s < 600, maxRedirects: 5 };
-        if (sessionAgent) homepageConfig.httpsAgent = sessionAgent;
-        await axios.get('https://shop.garena.my/', homepageConfig);
-        await logger.logInfo(orderId, 'Homepage pre-fetch completed');
-    } catch (e) {
-        // Non-fatal: homepage fetch is just for warming, don't abort on failure
-        console.log(`[Warmup] Homepage fetch failed (non-fatal): ${e.message}`);
-        await logger.logInfo(orderId, 'Homepage pre-fetch failed (non-fatal)', { error: e.message });
-    }
-
-    // ========== STEP 2: Tracker "Visit" Call ==========
-    try {
-        const trackerHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'Origin': 'https://shop.garena.my',
-            'Referer': 'https://shop.garena.my/',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Dest': 'empty',
-        };
-        const trackerConfig = { headers: trackerHeaders, timeout: 5000, validateStatus: (s) => s < 600 };
-        if (sessionAgent) trackerConfig.httpsAgent = sessionAgent;
-        await axios.post('https://shop.garena.my/api/tracker/track', {
-            event: 'MshopRevampVisit',
-            data: { app_id: 100067, source: 'pc', domain: 'shop.garena.my' }
-        }, trackerConfig);
-        await logger.logInfo(orderId, 'Tracker visit event sent');
-    } catch (e) {
-        // Non-fatal
-        console.log(`[Warmup] Tracker visit failed (non-fatal): ${e.message}`);
-    }
-
-    // ========== STEP 3: DataDome Cookie Generation ==========
-    console.log(`--- [2] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
+    // ========== STEP 1: DataDome Cookie Generation (via residential proxy) ==========
+    console.log(`--- [1] Getting DataDome cookie (residential proxy)... ---`);
     const datadomeCookie = await getOrRegenerateDatadome(loginUrl, orderId, proxyKey);
     if (!datadomeCookie) {
         console.error("Stopping: Failed to generate DataDome cookie.");
@@ -437,38 +436,8 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
         return null;
     }
 
-    // ========== STEP 4: Realistic Human Delay (3-5 seconds) ==========
-    const humanDelay = 3000 + Math.floor(Math.random() * 2000);
-    console.log(`--- [3] Simulating human typing delay: ${humanDelay}ms... ---`);
-    await logger.logInfo(orderId, 'Human delay before login', { delay_ms: humanDelay });
-    await new Promise(resolve => setTimeout(resolve, humanDelay));
-
-    // ========== STEP 5: Tracker "Click" Call (right before login) ==========
-    try {
-        const trackerHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'Origin': 'https://shop.garena.my',
-            'Referer': 'https://shop.garena.my/',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Dest': 'empty',
-        };
-        const trackerConfig = { headers: trackerHeaders, timeout: 5000, validateStatus: (s) => s < 600 };
-        if (sessionAgent) trackerConfig.httpsAgent = sessionAgent;
-        await axios.post('https://shop.garena.my/api/tracker/track', {
-            event: 'MshopRevampClick',
-            data: { action: 'id_login', app_id: 100067, source: 'pc', domain: 'shop.garena.my' }
-        }, trackerConfig);
-        await logger.logInfo(orderId, 'Tracker click event sent');
-    } catch (e) {
-        // Non-fatal
-        console.log(`[Warmup] Tracker click failed (non-fatal): ${e.message}`);
-    }
-
-    // ========== STEP 6: Garena Login ==========
-    console.log(`--- [4] Attempting login for Player ID: ${playerId}... ---`);
+    // ========== STEP 2: Garena Login (via same residential proxy) ==========
+    console.log(`--- [2] Attempting login for Player ID: ${playerId}... ---`);
 
     // The session_key is NOT required for player_id_login.
     // Garena generates a brand new session_key and returns it in the LOGIN RESPONSE set-cookie.
@@ -476,14 +445,19 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
     // We only need a valid DataDome cookie for the login request itself.
     const fullCookie = `region=MY; language=en; source=pc; datadome=${datadomeCookie}`;
 
+    // Generate matching randomized UA for the login request too
+    const chromeVersions = [134, 135, 136, 137, 138];
+    const chromeVersion = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
+    const loginUserAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`;
+    const loginSecChUa = `"Google Chrome";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not A(Brand";v="24"`;
 
     const headers = {
         'Host': 'shop.garena.my',
         'Connection': 'keep-alive',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-        'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not A(Brand";v="24"',
+        'User-Agent': loginUserAgent,
+        'Sec-Ch-Ua': loginSecChUa,
         'Sec-Ch-Ua-Mobile': '?0',
         'Sec-Ch-Ua-Platform': '"Windows"',
         'Origin': 'https://shop.garena.my',
@@ -492,6 +466,7 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
         'Sec-Fetch-Dest': 'empty',
         'Referer': 'https://shop.garena.my/?channel=202953',
         'Accept-Language': 'en-GB,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
         'Cookie': fullCookie
     };
 
@@ -509,8 +484,9 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
             timeout: 60000,
             validateStatus: (s) => s < 600 // Allow 4xx and 5xx so we can log them
         };
-        if (proxy) {
-            axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
+        // Use the same residential proxy for login as for DataDome cookie
+        if (sessionAgent) {
+            axiosConfig.httpsAgent = sessionAgent;
         }
         await logRequest(orderId, 'Garena Login', { url: loginUrl, method: 'POST', headers, body: loginPayload });
 
@@ -710,8 +686,9 @@ const getCsrfToken = async (loginCookie, proxy, orderId) => {
 
 const paymentLink = async (playerId, proxy, orderId) => {
     return withRetries(async () => {
-        await logger.logInfo(orderId, 'paymentLink: start', { playerId, using_proxy: Boolean(proxy) });
-        const session = await getGarenaSession(playerId, proxy, orderId);
+        await logger.logInfo(orderId, 'paymentLink: start', { playerId, using_residential_proxy: true });
+        // proxy arg from topup.js is ignored for Garena login — residential proxy is used internally
+        const session = await getGarenaSession(playerId, null, orderId);
 
         if (session && session.error === 'captcha_detected') {
             await logger.logWarn(orderId, 'paymentLink: captcha detected during session creation');
@@ -757,7 +734,8 @@ const paymentLink = async (playerId, proxy, orderId) => {
         console.log(`--- [SUCCESS] Player ID verified: ${verificationData.player_id.nickname} ---`);
         await logger.logInfo(orderId, 'Verify Player: success', { nickname: verificationData.player_id.nickname });
 
-        const preflight = await getCsrfToken(session.cookie, proxy, orderId);
+        // CSRF, pay/init go DIRECT (no proxy) to save residential proxy bandwidth
+        const preflight = await getCsrfToken(session.cookie, null, orderId);
         if (!preflight) {
             await logger.logError(orderId, 'paymentLink: Failed to get CSRF token from preflight request');
             // This will cause a retry
