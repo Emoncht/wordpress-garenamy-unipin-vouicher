@@ -41,16 +41,28 @@ class OrderLogger {
         const logFilePath = this.getLogFilePath(orderId);
         const release = await this.acquireTaskLock(orderId);
 
-        const initialLogEntry = {
-            order_id: orderId,
-            created_at: new Date().toISOString(),
-            order_data: orderData,
-            logs: []
-        };
-
         try {
-            await fs.writeFile(logFilePath, JSON.stringify(initialLogEntry, null, 2));
-            // Log manually to skip duplicate file read/write since it's initial
+            // Try to read existing log first — if another voucher from the same order
+            // already initialized this file, we must NOT overwrite it (data loss!)
+            let existing = null;
+            try {
+                const raw = await fs.readFile(logFilePath, 'utf8');
+                existing = JSON.parse(raw);
+            } catch (e) {
+                // File doesn't exist yet — that's fine, create fresh
+            }
+
+            if (!existing) {
+                const initialLogEntry = {
+                    order_id: orderId,
+                    created_at: new Date().toISOString(),
+                    order_data: orderData,
+                    logs: []
+                };
+                await fs.writeFile(logFilePath, JSON.stringify(initialLogEntry, null, 2));
+            }
+            // If the file already exists (another voucher ran first), leave it intact.
+
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
             console.log(`[${timestamp}] [${orderId}] [INFO] Order log initialized`);
         } catch (error) {
@@ -197,16 +209,18 @@ class OrderLogger {
 
             // Prune old logs to keep disk usage low on ephemeral Koyeb instances
             await this.pruneOldLogs(100);
-
-            this.log(orderId, 'info', 'Order processing completed', {
-                final_status: finalStatus,
-                summary: summary
-            });
         } catch (error) {
             console.error(`Failed to finalize log file for order ${orderId}:`, error);
         } finally {
             release();
         }
+
+        // NOTE: this.log() is called AFTER releasing the lock so it can acquire
+        // the lock itself properly and not deadlock inside finalizeOrderLog.
+        await this.log(orderId, 'info', 'Order processing completed', {
+            final_status: finalStatus,
+            summary: summary
+        });
     }
 
     async getOrderLogs(orderId) {

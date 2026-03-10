@@ -654,23 +654,28 @@ class Topup_Central_Admin {
                                 
                                 if (logData.logs && logData.logs.length > 0) {
                                     logData.logs.forEach(l => {
-                                        const lvlStr = (l.level || 'INFO').toLowerCase();
+                                        const lvlStr = (l.level ? String(l.level).toLowerCase() : 'info');
+                                        const displayLvl = (l.level ? String(l.level).toUpperCase() : 'INFO');
                                         const timeStr = l.timestamp ? l.timestamp.replace('T', ' ').substring(0, 19) : '';
-                                        let metaStr = '';
                                         
-                                        // Inline metadata cleanly
+                                        let metaStr = '';
                                         if (l.data && typeof l.data === 'object' && Object.keys(l.data).length > 0) {
-                                            metaStr = ` <span style="color:#9cdcfe;">${JSON.stringify(l.data)}</span>`;
+                                            const jsonStr = JSON.stringify(l.data);
+                                            // Securely escape arbitrary JSON for HTML injection
+                                            const escapedJson = $('<div>').text(jsonStr).html();
+                                            metaStr = ` <span style="color:#9cdcfe; word-wrap:break-word; word-break:break-all;">${escapedJson}</span>`;
                                         }
+                                        
+                                        const msgStr = l.message ? $('<div>').text(l.message).html() : '';
                                         
                                         out += `<div class="tc-log-line">
                                             <span class="tc-log-time">[${timeStr}]</span> 
-                                            <span class="tc-log-lvl-${lvlStr}">[${l.level}]</span> 
-                                            ${l.message}${metaStr}
+                                            <span class="tc-log-lvl-${lvlStr}">[${displayLvl}]</span> 
+                                            ${msgStr}${metaStr}
                                         </div>`;
                                     });
                                 } else {
-                                    out += '<div>No log entries found.</div>';
+                                    out += '<div style="color:#808080;">No log entries found.</div>';
                                 }
                                 content.html(out);
                             } catch(e) {

@@ -127,6 +127,9 @@ async function browserWorkerLoop(browserId) {
             };
 
             // Attach JSON log as base64 (replaces screenshot for smart detection)
+            // Small pause to let any remaining in-flight log writes for this order
+            // finish flushing through the lock queue before we snapshot the file.
+            await sleep(300);
             try {
                 const logData = await logger.getOrderLogs(voucher.order_id);
                 if (logData) {

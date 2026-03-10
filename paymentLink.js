@@ -137,17 +137,47 @@ async function logResponse(orderId, label, { status, headers, body }) {
  * Generate realistic browser fingerprint values with slight randomization
  */
 const generateFingerprint = () => {
-    // Randomize some values slightly to avoid detection patterns
-    const baseWidth = 1920;
-    const baseHeight = 1080;
-    const availHeight = 1040; // Taskbar takes ~40px
+    // --- Randomized browser profiles to avoid fingerprint correlation ---
+    // Pick from realistic desktop resolution pools
+    const resolutionPool = [
+        { w: 1920, h: 1080, avail_h: 1040 },
+        { w: 1920, h: 1080, avail_h: 1032 },
+        { w: 1536, h: 864, avail_h: 824 },
+        { w: 1366, h: 768, avail_h: 728 },
+        { w: 2560, h: 1440, avail_h: 1400 },
+        { w: 1440, h: 900, avail_h: 860 },
+    ];
+    const res = resolutionPool[Math.floor(Math.random() * resolutionPool.length)];
 
-    // Generate realistic mouse movement data
-    const mouseClicks = 2 + Math.floor(Math.random() * 4);
-    const mouseMoves = 15 + Math.floor(Math.random() * 30);
-    const scrolls = 3 + Math.floor(Math.random() * 8);
-    const keyDowns = Math.floor(Math.random() * 6);
-    const keyUps = keyDowns > 0 ? keyDowns - Math.floor(Math.random() * 2) : 0;
+    // Randomize browser window height (inner height varies by toolbar/bookmarks)
+    const br_h = res.avail_h - Math.floor(Math.random() * 40); // e.g., 992-1032
+    const br_w = res.w;
+
+    // Randomized hardware concurrency (common values: 4, 8, 12, 16)
+    const hcPool = [4, 8, 8, 8, 12, 16];
+    const hc = hcPool[Math.floor(Math.random() * hcPool.length)];
+
+    // Randomized device memory (common values: 4, 8, 16)
+    const dvmPool = [4, 8, 8, 8, 16];
+    const dvm = dvmPool[Math.floor(Math.random() * dvmPool.length)];
+
+    // Generate realistic mouse movement & interaction data
+    const mouseClicks = 2 + Math.floor(Math.random() * 5);   // 2-6 clicks
+    const mouseMoves = 20 + Math.floor(Math.random() * 60);  // 20-79 moves
+    const scrolls = 1 + Math.floor(Math.random() * 6);       // 1-6 scrolls
+    const keyDowns = 5 + Math.floor(Math.random() * 12);     // 5-16 keydowns (typing player ID)
+    const keyUps = Math.max(0, keyDowns - Math.floor(Math.random() * 2));
+
+    // Generate plausible mouse positions (player ID input is near bottom-center of page)
+    // These should NOT be null when mousemove count > 0
+    const mp_cx = 350 + Math.floor(Math.random() * 400);  // current X: 350-749
+    const mp_cy = 650 + Math.floor(Math.random() * 200);  // current Y: 650-849
+    const mp_mx = mp_cx + Math.floor(Math.random() * 100) - 50; // max X: near current
+    const mp_my = mp_cy + Math.floor(Math.random() * 80) - 40;  // max Y: near current
+    const mp_sx = Math.floor(Math.random() * 200);         // scroll X: 0-199
+    const mp_sy = Math.floor(Math.random() * 400);         // scroll Y: 0-399
+    const mp_tr = mouseMoves > 0;                          // tracking active
+    const mm_md = 200 + Math.floor(Math.random() * 1500);  // mouse movement duration ms
 
     return {
         jsData: {
@@ -155,8 +185,8 @@ const generateFingerprint = () => {
             "plg": 0, "plgod": false, "plgne": "NA", "plgre": "NA", "plgof": "NA",
             "plggt": "NA", "pltod": false,
 
-            // Browser dimensions (consistent desktop Chrome)
-            "br_h": 937, "br_w": 1920, "br_oh": 937, "br_ow": 1920,
+            // Browser dimensions (randomized from pool)
+            "br_h": br_h, "br_w": br_w, "br_oh": br_h, "br_ow": br_w,
 
             // JavaScript features
             "jsf": false, "cvs": true, "phe": false, "nm": false, "sln": null,
@@ -164,15 +194,15 @@ const generateFingerprint = () => {
             // Local/session storage
             "lo": true, "lb": true,
 
-            // Mouse position (null = not tracked yet, realistic)
-            "mp_cx": null, "mp_cy": null, "mp_mx": null, "mp_my": null,
-            "mp_sx": null, "mp_sy": null, "mp_tr": null, "mm_md": null,
+            // Mouse position (randomized, consistent with event counters)
+            "mp_cx": mp_cx, "mp_cy": mp_cy, "mp_mx": mp_mx, "mp_my": mp_my,
+            "mp_sx": mp_sx, "mp_sy": mp_sy, "mp_tr": mp_tr, "mm_md": mm_md,
 
-            // Hardware
-            "hc": 8,  // Hardware concurrency (CPU cores)
+            // Hardware (randomized)
+            "hc": hc,
 
-            // Screen resolution
-            "rs_h": baseHeight, "rs_w": baseWidth, "rs_cd": 24,
+            // Screen resolution (randomized from pool)
+            "rs_h": res.h, "rs_w": res.w, "rs_cd": 24,
 
             // User agent
             "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
@@ -180,11 +210,11 @@ const generateFingerprint = () => {
             // Language & locale
             "lg": "en-US", "pr": 1,
 
-            // Available screen (minus taskbar)
-            "ars_h": availHeight, "ars_w": baseWidth,
+            // Available screen (from pool)
+            "ars_h": res.avail_h, "ars_w": res.w,
 
-            // Timezone: Malaysia is UTC+8, so offset is -480 minutes
-            "tz": -480, "tzp": "Asia/Kuala_Lumpur",
+            // Timezone: Bangladesh is UTC+6, offset is -360 minutes
+            "tz": -360, "tzp": "Asia/Dhaka",
 
             // Storage APIs
             "str_ss": true, "str_ls": true, "str_idb": true, "str_odb": true,
@@ -192,7 +222,7 @@ const generateFingerprint = () => {
             // AbortController
             "abk": null,
 
-            // Touch support (desktop = 0 or 1)
+            // Touch support (desktop = 0)
             "ts_mtp": 0, "ts_tec": false, "ts_tsa": false,
 
             // Screen orientation
@@ -223,8 +253,8 @@ const generateFingerprint = () => {
             // Video codecs support
             "vco": "probably", "vch": "probably", "vcw": "probably", "vc1": "probably",
 
-            // Device memory
-            "dvm": 8,
+            // Device memory (randomized)
+            "dvm": dvm,
 
             // Various feature detections
             "sqt": false, "bgav": true, "rri": true, "idfr": true,
@@ -260,7 +290,7 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
         "Referer": url,
         "request": new URL(url).pathname,
         "responsePage": "origin",
-        "ddv": "5.1.11"
+        "ddv": "5.4.0"
     };
 
     const requestHeaders = {
@@ -271,7 +301,8 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
     };
 
     try {
-        await logRequest(orderId, 'DataDome', { url: 'https://api-js.datadome.co/js/', method: 'POST', headers: requestHeaders, body: querystring.stringify(data).slice(0, 500) });
+        const DATADOME_ENDPOINT = 'https://datadome.garena.com/js/';
+        await logRequest(orderId, 'DataDome', { url: DATADOME_ENDPOINT, method: 'POST', headers: requestHeaders, body: querystring.stringify(data).slice(0, 500) });
 
         const axiosConfig = {
             headers: requestHeaders,
@@ -282,7 +313,7 @@ const _rawDatadomeGenerate = async (url, orderId, proxyKey = 'no_proxy') => {
             axiosConfig.httpsAgent = new HttpsProxyAgent(proxyKey);
         }
 
-        const response = await axios.post('https://api-js.datadome.co/js/', querystring.stringify(data), axiosConfig);
+        const response = await axios.post(DATADOME_ENDPOINT, querystring.stringify(data), axiosConfig);
 
         if (response.status >= 400) {
             await logResponse(orderId, 'DataDome (Error)', { status: response.status, headers: response.headers, body: JSON.stringify(response.data).slice(0, 1000) });
@@ -329,11 +360,14 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
     const loginUrl = 'https://shop.garena.my/api/auth/player_id_login';
     const proxyKey = proxy || 'no_proxy';
 
+    // Create a shared httpsAgent for all requests in this session
+    const sessionAgent = proxyKey !== 'no_proxy' ? new HttpsProxyAgent(proxyKey) : undefined;
+
     let proxyExitIp = 'Unknown';
     if (proxyKey !== 'no_proxy') {
         try {
             const ipRes = await axios.get('https://api.ipify.org?format=json', {
-                httpsAgent: new HttpsProxyAgent(proxyKey),
+                httpsAgent: sessionAgent,
                 timeout: 8000
             });
             proxyExitIp = ipRes.data.ip;
@@ -344,14 +378,97 @@ const getGarenaSession = async (playerId, proxy, orderId, _isRetryAfterCacheInva
         }
     }
 
-    console.log(`--- [1] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
+    // ========== STEP 1: Homepage Pre-Fetch (warm the proxy IP) ==========
+    console.log(`--- [1] Warming proxy with homepage fetch... ---`);
+    try {
+        const homepageHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-GB,en;q=0.9',
+            'Sec-Ch-Ua': '"Google Chrome";v="137", "Chromium";v="137", "Not A(Brand";v="24"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+        };
+        const homepageConfig = { headers: homepageHeaders, timeout: 10000, validateStatus: (s) => s < 600, maxRedirects: 5 };
+        if (sessionAgent) homepageConfig.httpsAgent = sessionAgent;
+        await axios.get('https://shop.garena.my/', homepageConfig);
+        await logger.logInfo(orderId, 'Homepage pre-fetch completed');
+    } catch (e) {
+        // Non-fatal: homepage fetch is just for warming, don't abort on failure
+        console.log(`[Warmup] Homepage fetch failed (non-fatal): ${e.message}`);
+        await logger.logInfo(orderId, 'Homepage pre-fetch failed (non-fatal)', { error: e.message });
+    }
+
+    // ========== STEP 2: Tracker "Visit" Call ==========
+    try {
+        const trackerHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'Origin': 'https://shop.garena.my',
+            'Referer': 'https://shop.garena.my/',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+        };
+        const trackerConfig = { headers: trackerHeaders, timeout: 5000, validateStatus: (s) => s < 600 };
+        if (sessionAgent) trackerConfig.httpsAgent = sessionAgent;
+        await axios.post('https://shop.garena.my/api/tracker/track', {
+            event: 'MshopRevampVisit',
+            data: { app_id: 100067, source: 'pc', domain: 'shop.garena.my' }
+        }, trackerConfig);
+        await logger.logInfo(orderId, 'Tracker visit event sent');
+    } catch (e) {
+        // Non-fatal
+        console.log(`[Warmup] Tracker visit failed (non-fatal): ${e.message}`);
+    }
+
+    // ========== STEP 3: DataDome Cookie Generation ==========
+    console.log(`--- [2] Getting DataDome cookie (proxy: ${proxyKey})... ---`);
     const datadomeCookie = await getOrRegenerateDatadome(loginUrl, orderId, proxyKey);
     if (!datadomeCookie) {
         console.error("Stopping: Failed to generate DataDome cookie.");
         await logger.logError(orderId, 'Stopping: Failed to generate DataDome cookie', null, { step: 'getGarenaSession' });
         return null;
     }
-    console.log(`--- [2] Attempting login for Player ID: ${playerId}... ---`);
+
+    // ========== STEP 4: Realistic Human Delay (3-5 seconds) ==========
+    const humanDelay = 3000 + Math.floor(Math.random() * 2000);
+    console.log(`--- [3] Simulating human typing delay: ${humanDelay}ms... ---`);
+    await logger.logInfo(orderId, 'Human delay before login', { delay_ms: humanDelay });
+    await new Promise(resolve => setTimeout(resolve, humanDelay));
+
+    // ========== STEP 5: Tracker "Click" Call (right before login) ==========
+    try {
+        const trackerHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'Origin': 'https://shop.garena.my',
+            'Referer': 'https://shop.garena.my/',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+        };
+        const trackerConfig = { headers: trackerHeaders, timeout: 5000, validateStatus: (s) => s < 600 };
+        if (sessionAgent) trackerConfig.httpsAgent = sessionAgent;
+        await axios.post('https://shop.garena.my/api/tracker/track', {
+            event: 'MshopRevampClick',
+            data: { action: 'id_login', app_id: 100067, source: 'pc', domain: 'shop.garena.my' }
+        }, trackerConfig);
+        await logger.logInfo(orderId, 'Tracker click event sent');
+    } catch (e) {
+        // Non-fatal
+        console.log(`[Warmup] Tracker click failed (non-fatal): ${e.message}`);
+    }
+
+    // ========== STEP 6: Garena Login ==========
+    console.log(`--- [4] Attempting login for Player ID: ${playerId}... ---`);
 
     // The session_key is NOT required for player_id_login.
     // Garena generates a brand new session_key and returns it in the LOGIN RESPONSE set-cookie.
