@@ -1,0 +1,10 @@
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10000
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10001
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10002
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10003
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10004
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10005
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10006
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10007
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10008
+ca82c6460e87874b9296__cr.de,gb,us:eb41ebe7b6b41e7c@gw.dataimpulse.com:10009
