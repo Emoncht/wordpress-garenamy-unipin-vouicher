@@ -150,7 +150,12 @@ class Topup_Central_Admin {
                 <p style="margin:0;">Workers are currently blocked from claiming new vouchers. Go to Controls to resume.</p>
             </div>
 
-            <div class="tc-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="tc-grid" style="grid-template-columns: repeat(5, 1fr);">
+                <div class="tc-card">
+                    <h3 style="color:#8a6d3b;">Active Workers</h3>
+                    <div class="tc-stat" id="stat-workers" style="color:#8a6d3b;">--</div>
+                    <div class="tc-stat-label">Total Fleet Load</div>
+                </div>
                 <div class="tc-card">
                     <h3 style="color:#646970;">Pending</h3>
                     <div class="tc-stat" id="stat-pending">--</div>
@@ -236,6 +241,7 @@ class Topup_Central_Admin {
                     $.post(ajaxurl, { action: 'topup_get_live_data' }, function(res) {
                         if(res.success) {
                             // Update Stats
+                            $('#stat-workers').text(res.data.stats.workers);
                             $('#stat-pending').text(res.data.stats.pending);
                             $('#stat-processing').text(res.data.stats.processing);
                             $('#stat-completed').text(res.data.stats.completed);
@@ -964,6 +970,7 @@ class Topup_Central_Admin {
 
         $servers = $wpdb->get_results( "SELECT * FROM $ts ORDER BY server_id ASC", ARRAY_A );
         $now_ts  = current_time( 'timestamp' );
+        $total_active_workers = 0;
         foreach ( $servers as &$srv ) {
             $sid = $srv['server_id'];
             $srv['nickname'] = sanitize_text_field( $srv['nickname'] ?? '' );
@@ -979,15 +986,23 @@ class Topup_Central_Admin {
             }
 
             $stale = $diff_sec > 300;
-            if ( ! $srv['is_active'] )  $srv['status'] = 'dead';
-            elseif ( $stale )           $srv['status'] = 'stale';
-            else                        $srv['status'] = 'online';
+            if ( ! $srv['is_active'] ) {
+                $srv['status'] = 'dead';
+            } elseif ( $stale ) {
+                $srv['status'] = 'stale';
+            } else {
+                $srv['status'] = 'online';
+                // Only count active workers from online, non-stale servers
+                $total_active_workers += (int) $srv['active_workers'];
+            }
 
             $srv['stats'] = $stats_map[ $sid ] ?? array(
                 'lifetime_success' => 0, 'lifetime_failed' => 0, 
                 'lifetime_avg_time' => 0, 'lasthour_success' => 0, 'lasthour_avg_time' => 0
             );
         }
+
+        $s['workers'] = $total_active_workers;
 
         // Recent activity feed (last 20 vouchers touched)
         $feed = $wpdb->get_results(

@@ -20,8 +20,8 @@ function withTimeout(promise, ms, label = 'Operation') {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function browserWorkerLoop(browserId, isBaseline = false) {
-    console.log(`[Worker ${browserId}] Loop started (baseline: ${isBaseline}).`);
+async function browserWorkerLoop(browserId) {
+    console.log(`[Worker ${browserId}] Loop started.`);
     let lastAliveLog = Date.now();
     let idleTime = 0;
 
@@ -51,17 +51,22 @@ async function browserWorkerLoop(browserId, isBaseline = false) {
 
             if (!response || !response.status || response.claimed_count === 0 || !response.vouchers || response.vouchers.length === 0) {
                 // Queue is empty
-                if (!isBaseline) {
-                    idleTime += 5000;
-                    if (idleTime >= 60000) {
-                        console.log(`[Worker ${browserId}] Burst worker retiring after 60s idle.`);
+                idleTime += 5000;
+                
+                // Check if we should retire
+                if (idleTime >= 60000) {
+                    if (state.getActiveWorkerCount() > state.getScalingConfig().minWorkers) {
+                        console.log(`[Worker ${browserId}] Retiring after 60s idle (scaling down to match minWorkers).`);
                         state.decrementWorkerCount();
-                        return; // Exit the loop, worker dies gracefully
+                        return; // Exit the loop gracefully
+                    } else {
+                        // Cap idle time at 60s. Stay ready to retire if minWorkers drops later.
+                        idleTime = 60000;
                     }
                 }
 
                 if (Date.now() - lastAliveLog > 60000) {
-                    console.log(`[Worker ${browserId}] Alive - queue empty, polling...`);
+                    console.log(`[Worker ${browserId}] Alive - queue empty, polling... (active: ${state.getActiveWorkerCount()}/${state.getScalingConfig().minWorkers})`);
                     lastAliveLog = Date.now();
                 }
                 await sleep(5000);
@@ -182,11 +187,11 @@ async function browserWorkerLoop(browserId, isBaseline = false) {
 
 let nextWorkerId = 0;
 
-function spawnWorker(isBaseline) {
+function spawnWorker() {
     nextWorkerId++;
     state.incrementWorkerCount();
     const id = nextWorkerId;
-    browserWorkerLoop(id, isBaseline).catch(err => {
+    browserWorkerLoop(id).catch(err => {
         console.error(`Worker ${id} crashed:`, err);
         state.decrementWorkerCount();
     });
@@ -201,9 +206,9 @@ async function startScaleManager() {
         isBrowserPoolInitialized = true;
     }
 
-    // Start baseline workers (immortal, never retire)
+    // Start initial workers
     for (let i = 0; i < cfg.minWorkers; i++) {
-        spawnWorker(true);
+        spawnWorker();
         await sleep(2000); // Stagger startup
     }
 
@@ -223,7 +228,7 @@ async function startScaleManager() {
             if (toSpawn > 0) {
                 console.log(`[ScaleManager] Scaled UP: ${active} → ${active + toSpawn} workers (${pending} pending)`);
                 for (let i = 0; i < toSpawn; i++) {
-                    spawnWorker(false); // burst worker
+                    spawnWorker();
                 }
             }
         }
@@ -233,8 +238,7 @@ async function startScaleManager() {
             const toSpawn = config.minWorkers - active;
             console.log(`[ScaleManager] Config changed. Scaling UP baseline: ${active} → ${active + toSpawn}`);
             for (let i = 0; i < toSpawn; i++) {
-                spawnWorker(true);
-                // stagger baseline recovery a bit less than startup
+                spawnWorker();
             }
         }
     }, 10000);
