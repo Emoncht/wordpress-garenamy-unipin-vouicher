@@ -225,9 +225,14 @@ async function runAutomation(voucher) {
 
                 let result = await processUnipinCheckout(linkResult.url, payloadDetails, unipinProxy);
 
-                // If direct connection hit rate limit, activate proxy fallback and retry immediately
-                if (result.status === 'failed' && result.reason === 'RATE_LIMIT_DETECTED' && !useProxyForUnipin) {
-                    await logger.logWarn(orderId, 'UniPin 429 on direct IP. Activating proxy fallback for 60s and retrying...');
+                // If direct connection hit rate limit or network error (like timeout), activate proxy fallback and retry immediately
+                const isNetworkFailure = result.status === 'failed' && (
+                    result.reason === 'RATE_LIMIT_DETECTED' || 
+                    (result.reason && result.reason.includes('HTTP API Exception'))
+                );
+
+                if (isNetworkFailure && !useProxyForUnipin) {
+                    await logger.logWarn(orderId, 'UniPin direct connection failed (Rate Limit / Network Error). Activating proxy fallback for 60s and retrying...');
                     activateUnipinProxy(60000); // 1 minute proxy mode
                     result = await processUnipinCheckout(linkResult.url, payloadDetails, proxyKey);
                 }
