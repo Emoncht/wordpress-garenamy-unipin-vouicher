@@ -43,7 +43,7 @@ const getProxies = () => {
 
 // We keep the "pool" concept so the queue monitor and worker loop don't break,
 // but they are now just lightweight virtual "slots" instead of heavy Chrome browsers!
-const MAX_CONCURRENT_WORKERS = parseInt(process.env.BROWSER_CONCURRENCY || '5', 10);
+const MAX_CONCURRENT_WORKERS = parseInt(process.env.MAX_WORKERS || '8', 10);
 const virtualPool = [];
 
 async function initializeBrowserPool() {

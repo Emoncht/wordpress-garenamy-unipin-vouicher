@@ -64,6 +64,60 @@ class Topup_API_Orders {
         if ( $existing_order ) {
             // Return summary of existing
             $summary = self::get_order_summary( $order_id );
+            
+            // If the order is already in a terminal state, resend the callback
+            $terminal_states = array( 'success', 'failed', 'invalid_id', 'consumed' );
+            if ( in_array( $existing_order->status, $terminal_states ) ) {
+                $all_vouchers = $wpdb->get_results( $wpdb->prepare(
+                    "SELECT * FROM $table_vouchers WHERE order_id = %s",
+                    $order_id
+                ), ARRAY_A );
+
+                $payload_vouchers = array();
+                foreach ( $all_vouchers as $v ) {
+                    $start = strtotime( $v['processing_started_at'] );
+                    $end   = strtotime( $v['completed_at'] );
+                    $time_taken = 'N/A';
+                    if ( $start && $end ) {
+                        $seconds = $end - $start;
+                        $time_taken = $seconds < 60 ? "{$seconds} seconds" : floor( $seconds / 60 ) . " minutes " . ( $seconds % 60 ) . " seconds";
+                    }
+
+                    $payload_vouchers[] = array(
+                        'uid'                  => $v['player_id'],
+                        'voucher_code'         => $v['voucher_code'],
+                        'voucher_denomination' => $v['voucher_denomination'],
+                        'status'               => $v['status'],
+                        'reason'               => $v['reason'],
+                        'screenshot'           => $v['screenshot_base64'],
+                        'transaction_id'       => $v['transaction_id'],
+                        'validated_uid'        => $v['validated_uid'],
+                        'timetaken'            => $time_taken
+                    );
+                }
+
+                $payload = array(
+                    'result' => array(
+                        'order_id'       => $order_id,
+                        'order_status'   => $existing_order->status,
+                        // We use a simplified total time here as we don't store it explicitly if we don't want to recompute
+                        'totaltimetaken' => 'Re-dispatched', 
+                        'vouchers'       => $payload_vouchers
+                    )
+                );
+
+                wp_remote_post( $callback_url, array(
+                    'method'      => 'POST',
+                    'timeout'     => 15,
+                    'redirection' => 5,
+                    'httpversion' => '1.0',
+                    'blocking'    => false, // Async
+                    'headers'     => array( 'Content-Type' => 'application/json' ),
+                    'body'        => wp_json_encode( $payload ),
+                    'cookies'     => array()
+                ) );
+            }
+
             return new WP_REST_Response( array(
                 'status'   => true,
                 'message'  => 'Order already exists.',

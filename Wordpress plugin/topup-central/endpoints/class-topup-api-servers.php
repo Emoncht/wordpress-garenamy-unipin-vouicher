@@ -21,6 +21,7 @@ class Topup_API_Servers {
         $server_id          = sanitize_text_field( $params['server_id'] ?? '' );
         $label              = sanitize_text_field( $params['label'] ?? '' );
         $uptime_seconds     = isset( $params['uptime_seconds'] ) ? intval( $params['uptime_seconds'] ) : 0;
+        $active_workers     = isset( $params['active_workers'] ) ? intval( $params['active_workers'] ) : 0;
         
         $active_voucher_ids = '';
         if ( isset( $params['active_voucher_ids'] ) && is_array( $params['active_voucher_ids'] ) ) {
@@ -46,7 +47,8 @@ class Topup_API_Servers {
             'is_active'          => 1,
             'ip_address'         => $ip_address,
             'uptime_seconds'     => $uptime_seconds,
-            'active_voucher_ids' => $active_voucher_ids
+            'active_voucher_ids' => $active_voucher_ids,
+            'active_workers'     => $active_workers
         );
         if ( ! empty( $label ) ) {
             $data['label'] = $label;
@@ -79,12 +81,21 @@ class Topup_API_Servers {
             $delay_ms      = max( 1000, $expires_stamp * 1000 ); 
         }
 
+        $min_workers     = (int) get_option( 'topup_min_workers', 1 );
+        $max_workers     = (int) get_option( 'topup_max_workers', 8 );
+        $scale_threshold = (int) get_option( 'topup_scale_threshold', 5 );
+
         return new WP_REST_Response( array(
             'status' => true,
             'config' => array(
                 'global_rate_limit_active' => $is_rate_limited,
                 'min_delay_ms'             => $delay_ms,
-                'claim_batch_size'         => 3 // Can be moved to DB options later
+                'claim_batch_size'         => 3, // Can be moved to DB options later
+                'scaling' => array(
+                    'min_workers'     => $min_workers,
+                    'max_workers'     => $max_workers,
+                    'scale_threshold' => $scale_threshold,
+                )
             )
         ), 200 );
     }
@@ -100,35 +111,40 @@ class Topup_API_Servers {
         // 1. Delete deeply stale servers (older than 1 day) to prevent table bloat
         $wpdb->query( "DELETE FROM $table_servers WHERE last_heartbeat < (NOW() - INTERVAL 1 DAY)" );
 
-        // 1. Find all servers that haven't sent a heartbeat in 5 minutes
+        // 2. Find all servers that haven't sent a heartbeat in 5 minutes
         $stale_servers = $wpdb->get_col( 
             "SELECT server_id FROM $table_servers 
              WHERE last_heartbeat < (NOW() - INTERVAL 5 MINUTE) AND is_active = 1" 
         );
 
-        if ( empty( $stale_servers ) ) {
-            return;
+        $released_count = 0;
+
+        // Condition A: If there are stale servers, release ALL their vouchers
+        if ( ! empty( $stale_servers ) ) {
+            $server_placeholders = implode( ',', array_fill( 0, count( $stale_servers ), '%s' ) );
+            
+            $query_stale = $wpdb->prepare(
+                "UPDATE $table_vouchers 
+                 SET status = 'pending', locked_by = NULL, reason = CONCAT(IFNULL(reason,''), '\n[Recovered from stale server]') 
+                 WHERE status IN ('claimed', 'submitting') 
+                   AND locked_by IN ( $server_placeholders )",
+                $stale_servers
+            );
+            $released_count += $wpdb->query( $query_stale );
+
+            // Mark stale servers inactive
+            $wpdb->query( $wpdb->prepare(
+                "UPDATE $table_servers SET is_active = 0 WHERE server_id IN ( $server_placeholders )",
+                $stale_servers
+            ) );
         }
 
-        $server_placeholders = implode( ',', array_fill( 0, count( $stale_servers ), '%s' ) );
-
-        // 2. Release any 'claimed' or 'submitting' vouchers held by those servers
-        // or vouchers that have been locked for > 15 minutes by ANY server
-        $query = $wpdb->prepare(
-            "UPDATE $table_vouchers 
-             SET status = 'pending', locked_by = NULL, reason = CONCAT(IFNULL(reason,''), '\n[Recovered from dead lock]') 
-             WHERE status IN ('claimed', 'submitting') 
-               AND (locked_by IN ( $server_placeholders ) OR locked_at < (NOW() - INTERVAL 15 MINUTE))",
-            $stale_servers
-        );
-
-        $released_count = $wpdb->query( $query );
-
-        // Mark stale servers inactive so we don't keep querying them (they reactivate on next heartbeat)
-        $wpdb->query( $wpdb->prepare(
-            "UPDATE $table_servers SET is_active = 0 WHERE server_id IN ( $server_placeholders )",
-            $stale_servers
-        ) );
+        // Condition B: Release ANY voucher that has been locked for > 5 minutes (failsafe for crashed workers)
+        $query_time = "UPDATE $table_vouchers 
+                       SET status = 'pending', locked_by = NULL, reason = CONCAT(IFNULL(reason,''), '\n[Recovered from 5m timeout]') 
+                       WHERE status IN ('claimed', 'submitting') 
+                         AND locked_at < (NOW() - INTERVAL 5 MINUTE)";
+        $released_count += $wpdb->query( $query_time );
 
         if ( $released_count > 0 ) {
             error_log( "[Topup Central] Recovered $released_count dead-locked vouchers." );

@@ -49,7 +49,7 @@ class Topup_API_Vouchers {
              INNER JOIN $table_orders o ON v.order_id = o.order_id
              WHERE v.status = 'pending'
                AND v.locked_by IS NULL
-               AND v.retry_count < v.max_retries
+               AND v.retry_count <= v.max_retries
              ORDER BY o.priority ASC, v.created_at ASC
              LIMIT %d
              FOR UPDATE SKIP LOCKED",
@@ -78,10 +78,15 @@ class Topup_API_Vouchers {
 
         $wpdb->query( 'COMMIT' );
 
+        $pending_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM $table_vouchers WHERE status = 'pending' AND locked_by IS NULL"
+        );
+
         return new WP_REST_Response( array(
             'status'        => true,
             'vouchers'      => $vouchers ?: array(),
             'claimed_count' => is_array( $vouchers ) ? count( $vouchers ) : 0,
+            'pending_count' => $pending_count,
             'message'       => empty( $vouchers ) ? 'No pending vouchers available.' : 'Vouchers claimed successfully.'
         ), 200 );
     }
@@ -150,7 +155,10 @@ class Topup_API_Vouchers {
         } else {
             // Terminal state or out of retries
             $final_status = $status;
-            if ( $status === 'failed' && $voucher->retry_count >= $voucher->max_retries ) {
+            
+            // If it failed AND it was on its last retry, force the final status to failed
+            // (it won't be picked up again because of the limit)
+            if ( $status === 'failed' ) {
                 $final_status = 'failed';
             }
 

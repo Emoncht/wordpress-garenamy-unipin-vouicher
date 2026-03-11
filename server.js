@@ -3,7 +3,7 @@ const express = require("express");
 const session = require('express-session');
 const passport = require('./auth');
 const state = require('./state');
-const { startWorkerLoops } = require('./worker');
+const { startScaleManager } = require('./worker');
 const { getBrowserPool } = require('./topup');
 const { startHeartbeatLoop, setupShutdownHandlers } = require('./heartbeat');
 
@@ -89,4 +89,4 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 // Start background processes independently from the Express server binding
 // This prevents Phusion Passenger / Hostinger from timing out the boot process
 startHeartbeatLoop().catch(console.error);
-startWorkerLoops().catch(console.error);
+startScaleManager().catch(console.error);

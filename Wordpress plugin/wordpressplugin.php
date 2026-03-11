@@ -8,6 +8,13 @@ Author: Your Name
 Author URI: https://example.com/
 */
 
+// Declare HPOS (Custom Order Tables) compatibility
+add_action('before_woocommerce_init', function() {
+    if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
+    }
+});
+
 // Global variables for database version and table name
 global $custom_order_plugin_db_version;
 $custom_order_plugin_db_version = '1.0';
@@ -482,26 +489,34 @@ function custom_order_plugin_filter_payload($order_id, $payload) {
    Resend Payload Function – used for bulk action and scheduled calls
 -------------------------------------------------- */
 function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
+    // Get the order object early for HPOS-compatible meta operations.
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+
     // Limit resend attempts to a maximum of 10 per order, but only for scheduled (non-bulk) resends.
+    $resend_attempts = 0;
     if (!$is_bulk) {
-        $resend_attempts = get_post_meta($order_id, '_resend_attempts', true);
+        $resend_attempts = $order->get_meta('_resend_attempts');
         $resend_attempts = empty($resend_attempts) ? 0 : intval($resend_attempts);
         if ($resend_attempts >= 10) {
-            $order = wc_get_order($order_id);
             $order->add_order_note('Maximum resend attempts reached for this order.');
             return;
         }
     }
     
     // Check if this order is already being processed.
-    if ( get_post_meta($order_id, '_resend_processing', true) === '1' ) {
+    if ( $order->get_meta('_resend_processing') === '1' ) {
         return;
     }
-    update_post_meta($order_id, '_resend_processing', '1');
+    $order->update_meta_data('_resend_processing', '1');
+    $order->save();
     
-    $stored_payload = get_post_meta($order_id, '_unipin_order_payload', true);
+    $stored_payload = $order->get_meta('_unipin_order_payload');
     if (empty($stored_payload)) {
-        delete_post_meta($order_id, '_resend_processing');
+        $order->delete_meta_data('_resend_processing');
+        $order->save();
         return;
     }
     
@@ -510,7 +525,6 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
     $server_url_2 = get_option('unipin_voucher_server_url_2', '');
     
     list($filtered_payload, $already_processed) = custom_order_plugin_filter_payload($order_id, $stored_payload);
-    $order = wc_get_order($order_id);
     
     // Check if all vouchers have been processed.
     $all_vouchers = true;
@@ -537,7 +551,8 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
         $order->add_order_note($note_content, false);
         // Update order status as completed if all vouchers are processed.
         $order->update_status('completed', 'Order status updated to completed as all vouchers are processed.');
-        delete_post_meta($order_id, '_resend_processing');
+        $order->delete_meta_data('_resend_processing');
+        $order->save();
         return;
     } else {
         if (!empty($already_processed)) {
@@ -548,58 +563,42 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
             $order->add_order_note($note_content, false);
         }
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-  // Determine which server URL to use.
-    if ($is_bulk) {
-        // Bulk action always uses server_url_1 (if available).
-        $server_url = !empty($server_url_1) ? $server_url_1 : $server_url_2;
-    } else {
-        // Scheduled action: Round-robin between available servers
-        $available_servers = array();
-        if (!empty($server_url_1)) {
-            $available_servers[] = 'server1';
+        // Determine which server URL to use.
+        if ($is_bulk) {
+            // Bulk action always uses server_url_1 (if available).
+            $server_url = !empty($server_url_1) ? $server_url_1 : $server_url_2;
+        } else {
+            // Scheduled action: Round-robin between available servers
+            $available_servers = array();
+            if (!empty($server_url_1)) {
+                $available_servers[] = 'server1';
+            }
+            if (!empty($server_url_2)) {
+                $available_servers[] = 'server2';
+            }
+
+            if (empty($available_servers)) {
+                // Log error and exit if no servers are available
+                $order->add_order_note('Error: No server URLs configured for resending payload.');
+                $order->delete_meta_data('_resend_processing');
+                $order->save();
+                return;
+            }
+
+            // Get the last used server from the option
+            $last_server = get_option('custom_order_last_server', end($available_servers)); // Default to last to start with first
+
+            // Determine the next server in round-robin
+            $last_index = array_search($last_server, $available_servers);
+            $next_index = ($last_index === false) ? 0 : ($last_index + 1) % count($available_servers);
+            $selected_server = $available_servers[$next_index];
+
+            // Update the last server used
+            update_option('custom_order_last_server', $selected_server);
+
+            // Set the server URL based on selection
+            $server_url = ($selected_server === 'server1') ? $server_url_1 : $server_url_2;
         }
-        if (!empty($server_url_2)) {
-            $available_servers[] = 'server2';
-        }
-
-        if (empty($available_servers)) {
-            // Log error and exit if no servers are available
-            $order->add_order_note('Error: No server URLs configured for resending payload.');
-            delete_post_meta($order_id, '_resend_processing');
-            return;
-        }
-
-        // Get the last used server from the option
-        $last_server = get_option('custom_order_last_server', end($available_servers)); // Default to last to start with first
-
-        // Determine the next server in round-robin
-        $last_index = array_search($last_server, $available_servers);
-        $next_index = ($last_index === false) ? 0 : ($last_index + 1) % count($available_servers);
-        $selected_server = $available_servers[$next_index];
-
-        // Update the last server used
-        update_option('custom_order_last_server', $selected_server);
-
-        // Set the server URL based on selection
-        $server_url = ($selected_server === 'server1') ? $server_url_1 : $server_url_2;
-    }
-        
-        
-        
-        
-        
         
         $filtered_payload_json = json_encode($filtered_payload);
         $response = wp_remote_post($server_url, array(
@@ -628,10 +627,11 @@ function custom_order_plugin_resend_payload($order_id, $is_bulk = false) {
     // Only track resend attempts for scheduled (non-bulk) resends.
     if (!$is_bulk) {
         $resend_attempts++;
-        update_post_meta($order_id, '_resend_attempts', $resend_attempts);
+        $order->update_meta_data('_resend_attempts', $resend_attempts);
     }
     // Clear the processing flag.
-    delete_post_meta($order_id, '_resend_processing');
+    $order->delete_meta_data('_resend_processing');
+    $order->save();
 }
 
 /* -------------------------------------------------
@@ -642,6 +642,8 @@ function custom_order_plugin_add_resend_payload_bulk_action($bulk_actions) {
     return $bulk_actions;
 }
 add_filter('bulk_actions-edit-shop_order', 'custom_order_plugin_add_resend_payload_bulk_action');
+// HPOS bulk action hook
+add_filter('bulk_actions-woocommerce_page_wc-orders', 'custom_order_plugin_add_resend_payload_bulk_action');
 
 function custom_order_plugin_handle_resend_payload_bulk_action($redirect_to, $action, $post_ids) {
     if ($action !== 'resend_payload') {
@@ -654,6 +656,8 @@ function custom_order_plugin_handle_resend_payload_bulk_action($redirect_to, $ac
     return $redirect_to;
 }
 add_filter('handle_bulk_actions-edit-shop_order', 'custom_order_plugin_handle_resend_payload_bulk_action', 10, 3);
+// HPOS bulk action handler hook
+add_filter('handle_bulk_actions-woocommerce_page_wc-orders', 'custom_order_plugin_handle_resend_payload_bulk_action', 10, 3);
 
 function custom_order_plugin_display_resend_payload_notice() {
     if (!empty($_REQUEST['resent_payload'])) {
@@ -675,16 +679,11 @@ function custom_order_plugin_resend_payload_cron() {
     // Set the lock for slightly longer than your cron interval (5 minutes)
     set_transient('custom_order_plugin_resend_lock', true, 6 * 60);
 
-    // Build a WP_Query to grab the oldest 5 orders matching your criteria:
-    $args = array(
-        'post_type'      => 'shop_order',
-        'post_status'    => array('wc-loading', 'loading', 'wc-resending', 'resending'),
-        'date_query'     => array(
-            array(
-                'before' => '5 minutes ago',
-            ),
-        ),
-        'meta_query'     => array(
+    // HPOS-compatible query using wc_get_orders instead of WP_Query
+    $orders = wc_get_orders(array(
+        'status'       => array('loading', 'resending'),
+        'date_created' => '<' . (time() - 5 * 60),
+        'meta_query'   => array(
             'relation' => 'AND',
             array(
                 'key'     => '_unipin_order_payload',
@@ -697,27 +696,20 @@ function custom_order_plugin_resend_payload_cron() {
                     'compare' => 'NOT EXISTS',
                 ),
                 array(
-                    'key'     => '_resend_processing',
-                    'value'   => '0',
-                    'compare' => '=',
+                    'key'   => '_resend_processing',
+                    'value' => '0',
                 ),
             ),
         ),
-        'posts_per_page' => 5,  // Only grab the oldest 5 orders
-        'orderby'        => 'date',
-        'order'          => 'ASC',
-    );
-
-    $query = new WP_Query($args);
+        'limit'   => 5,
+        'orderby' => 'date',
+        'order'   => 'ASC',
+    ));
 
     // Process each matching order.
-    if ($query->have_posts()) {
-        while ($query->have_posts()) {
-            $query->the_post();
-            $order_id = get_the_ID();
-            custom_order_plugin_resend_payload($order_id, false);
-        }
-        wp_reset_postdata();
+    foreach ($orders as $order) {
+        $order_id = $order->get_id();
+        custom_order_plugin_resend_payload($order_id, false);
     }
 
     // Release the transient lock so next cron run can proceed.

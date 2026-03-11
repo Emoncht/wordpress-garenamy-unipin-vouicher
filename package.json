@@ -23,5 +23,15 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "uuid": "^10.0.0"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Emoncht/wordpress-garenamy-unipin-vouicher.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Emoncht/wordpress-garenamy-unipin-vouicher/issues"
+  },
+  "homepage": "https://github.com/Emoncht/wordpress-garenamy-unipin-vouicher#readme"
 }

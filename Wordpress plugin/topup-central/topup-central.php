@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TOPUP_CENTRAL_VERSION', '1.0.0' );
-define( 'TOPUP_CENTRAL_DB_VERSION', '1.0.1' );
+define( 'TOPUP_CENTRAL_DB_VERSION', '1.0.2' );
 
 // ------------------------------------------------------------------
 // 1. Database Installation
@@ -76,6 +76,7 @@ function topup_central_install() {
         ip_address varchar(100) DEFAULT NULL,
         uptime_seconds int DEFAULT 0 NOT NULL,
         active_voucher_ids text DEFAULT NULL,
+        active_workers int DEFAULT 0 NOT NULL,
         total_completed int DEFAULT 0 NOT NULL,
         total_failed int DEFAULT 0 NOT NULL,
         registered_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,

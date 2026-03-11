@@ -7,6 +7,15 @@ let globalRateLimitActive = false;
 let isWorkerShuttingDown = false;
 let workerDelayMs = 1000;
 
+// --- Scaling Config & State ---
+let scalingConfig = {
+    minWorkers: 1,
+    maxWorkers: 8,
+    scaleThreshold: 5
+};
+let activeWorkerCount = 0;
+let lastKnownPending = 0;
+
 // --- UniPin Proxy Fallback Timer ---
 // When 0, UniPin uses direct server IP (free). When active, routes through proxy.
 let unipinProxyUntil = 0;
@@ -134,4 +143,13 @@ module.exports = {
     // UniPin Proxy Fallback
     isUnipinProxyActive,
     activateUnipinProxy,
+
+    // Scaling Config
+    getScalingConfig: () => scalingConfig,
+    setScalingConfig: (cfg) => { scalingConfig = { ...scalingConfig, ...cfg }; },
+    getActiveWorkerCount: () => activeWorkerCount,
+    incrementWorkerCount: () => ++activeWorkerCount,
+    decrementWorkerCount: () => --activeWorkerCount,
+    getLastKnownPending: () => lastKnownPending,
+    setLastKnownPending: (n) => { lastKnownPending = n; },
 };

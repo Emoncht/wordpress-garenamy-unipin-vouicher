@@ -5,7 +5,6 @@ const state = require('./state');
 const { claimVouchers, updateVoucher, reportRateLimit } = require('./centralApi');
 const { SERVER_ID } = require('./heartbeat');
 
-const BROWSER_CONCURRENCY = parseInt(process.env.BROWSER_CONCURRENCY || '5', 10);
 const AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per voucher
 let isBrowserPoolInitialized = false;
 
@@ -21,9 +20,10 @@ function withTimeout(promise, ms, label = 'Operation') {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function browserWorkerLoop(browserId) {
-    console.log(`[Worker ${browserId}] Loop started.`);
+async function browserWorkerLoop(browserId, isBaseline = false) {
+    console.log(`[Worker ${browserId}] Loop started (baseline: ${isBaseline}).`);
     let lastAliveLog = Date.now();
+    let idleTime = 0;
 
     while (true) {
         if (state.getShuttingDown()) {
@@ -45,8 +45,21 @@ async function browserWorkerLoop(browserId) {
             // Note: Each virtual worker claims 1 voucher at a time
             const response = await claimVouchers(SERVER_ID, 1);
 
+            if (response && response.pending_count !== undefined) {
+                state.setLastKnownPending(response.pending_count);
+            }
+
             if (!response || !response.status || response.claimed_count === 0 || !response.vouchers || response.vouchers.length === 0) {
-                // Queue is empty, wait a bit
+                // Queue is empty
+                if (!isBaseline) {
+                    idleTime += 5000;
+                    if (idleTime >= 60000) {
+                        console.log(`[Worker ${browserId}] Burst worker retiring after 60s idle.`);
+                        state.decrementWorkerCount();
+                        return; // Exit the loop, worker dies gracefully
+                    }
+                }
+
                 if (Date.now() - lastAliveLog > 60000) {
                     console.log(`[Worker ${browserId}] Alive - queue empty, polling...`);
                     lastAliveLog = Date.now();
@@ -54,6 +67,8 @@ async function browserWorkerLoop(browserId) {
                 await sleep(5000);
                 continue;
             }
+
+            idleTime = 0; // Reset idle time on successful claim
 
             const voucher = response.vouchers[0];
 
@@ -165,24 +180,64 @@ async function browserWorkerLoop(browserId) {
     }
 }
 
-async function startWorkerLoops() {
-    console.log(`Starting ${BROWSER_CONCURRENCY} stateless worker loops...`);
+let nextWorkerId = 0;
+
+function spawnWorker(isBaseline) {
+    nextWorkerId++;
+    state.incrementWorkerCount();
+    const id = nextWorkerId;
+    browserWorkerLoop(id, isBaseline).catch(err => {
+        console.error(`Worker ${id} crashed:`, err);
+        state.decrementWorkerCount();
+    });
+}
+
+async function startScaleManager() {
+    const cfg = state.getScalingConfig();
+    console.log(`[ScaleManager] Starting with min=${cfg.minWorkers}, max=${cfg.maxWorkers}`);
 
     if (!isBrowserPoolInitialized) {
         await initializeBrowserPool();
         isBrowserPoolInitialized = true;
     }
 
-    // Start all workers
-    for (let i = 0; i < BROWSER_CONCURRENCY; i++) {
-        // Run in background without awaiting, so they work concurrently
-        browserWorkerLoop(i + 1).catch(err => {
-            console.error(`Unhandled error in worker loop ${i + 1}:`, err);
-        });
-
-        // Fix 7: Stagger worker starts to avoid initial claim burst
-        await sleep(2000);
+    // Start baseline workers (immortal, never retire)
+    for (let i = 0; i < cfg.minWorkers; i++) {
+        spawnWorker(true);
+        await sleep(2000); // Stagger startup
     }
+
+    // Scaling loop — runs every 10s
+    setInterval(() => {
+        const pending = state.getLastKnownPending();
+        const active  = state.getActiveWorkerCount();
+        const config  = state.getScalingConfig();
+
+        // Scale UP: if pending/active > threshold AND we're below max
+        if (active > 0 && (pending / active) > config.scaleThreshold && active < config.maxWorkers) {
+            const toSpawn = Math.min(
+                Math.ceil(pending / config.scaleThreshold) - active,
+                config.maxWorkers - active
+            );
+            
+            if (toSpawn > 0) {
+                console.log(`[ScaleManager] Scaled UP: ${active} → ${active + toSpawn} workers (${pending} pending)`);
+                for (let i = 0; i < toSpawn; i++) {
+                    spawnWorker(false); // burst worker
+                }
+            }
+        }
+        
+        // Ensure minimum baseline if config changes
+        if (active < config.minWorkers) {
+            const toSpawn = config.minWorkers - active;
+            console.log(`[ScaleManager] Config changed. Scaling UP baseline: ${active} → ${active + toSpawn}`);
+            for (let i = 0; i < toSpawn; i++) {
+                spawnWorker(true);
+                // stagger baseline recovery a bit less than startup
+            }
+        }
+    }, 10000);
 }
 
-module.exports = { startWorkerLoops };
+module.exports = { startScaleManager };

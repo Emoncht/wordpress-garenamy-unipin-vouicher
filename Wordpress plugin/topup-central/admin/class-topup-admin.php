@@ -68,24 +68,48 @@ class Topup_Central_Admin {
             .tc-filters { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
             .tc-pagination { margin-top: 15px; text-align: right; }
             
-            /* Modal Styles */
-            .tc-modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 99999; justify-content: center; align-items: center; }
-            .tc-modal { background: #1e1e1e; color: #d4d4d4; width: 90%; max-width: 900px; max-height: 85vh; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); display: flex; flex-direction: column; font-family: Consolas, Monaco, monospace; }
-            .tc-modal-header { padding: 15px 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #252526; border-radius: 8px 8px 0 0; }
-            .tc-modal-header h2 { margin: 0; color: #fff; font-size: 16px; font-weight: normal; }
-            .tc-modal-close { cursor: pointer; color: #a5a5a5; font-size: 24px; line-height: 1; border: none; background: transparent; padding: 0; }
-            .tc-modal-close:hover { color: #fff; }
-            .tc-modal-body { padding: 20px; overflow-y: auto; flex: 1; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
-            .tc-log-line { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #2d2d2d; }
-            .tc-log-time { color: #569cd6; }
-            .tc-log-lvl-info { color: #4ec9b0; font-weight: bold; }
-            .tc-log-lvl-warn { color: #d7ba7d; font-weight: bold; }
-            .tc-log-lvl-error { color: #f44747; font-weight: bold; }
-            .tc-log-lvl-debug { color: #808080; }
+            /* Modal Styles — Light Theme */
+            .tc-modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.4); z-index: 99999; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+            .tc-modal { background: #ffffff; color: #1e293b; width: 90%; max-width: 900px; max-height: 85vh; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, \'Inter\', sans-serif; }
+            .tc-modal-header { padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-radius: 12px 12px 0 0; }
+            .tc-modal-header h2 { margin: 0; color: #0f172a; font-size: 15px; font-weight: 600; }
+            .tc-modal-close { cursor: pointer; color: #94a3b8; font-size: 22px; line-height: 1; border: none; background: transparent; padding: 4px 8px; border-radius: 6px; transition: all 0.15s; }
+            .tc-modal-close:hover { color: #ef4444; background: #fef2f2; }
+            .tc-modal-body { padding: 0; overflow-y: auto; flex: 1; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+
+            /* Log Lines */
+            .tc-log-line { font-family: -apple-system, BlinkMacSystemFont, \'Inter\', sans-serif; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; cursor: default; transition: all 0.15s ease; display: flex; align-items: flex-start; gap: 10px; border-left: 3px solid transparent; background: #ffffff; }
+            .tc-log-line.has-data { cursor: pointer; }
+            .tc-log-line:hover { background: #f8fafc; }
+            .tc-log-line.has-data:hover { background: #f1f5f9; border-left-color: #93c5fd; }
+            .tc-log-line.active { background: #eff6ff; border-left-color: #3b82f6; }
+
+            /* Timestamp */
+            .tc-log-time { color: #64748b; font-family: \'SF Mono\', SFMono-Regular, Consolas, monospace; font-size: 11px; white-space: nowrap; padding-top: 2px; min-width: 135px; }
+
+            /* Level Badges — Soft Pastel */
+            .tc-log-lvl { font-weight: 600; font-size: 10px; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 4px; min-width: 46px; text-align: center; text-transform: uppercase; white-space: nowrap; margin-top: 1px; display: inline-block; }
+            .tc-log-lvl-info { background: #eff6ff; color: #2563eb; }
+            .tc-log-lvl-warn { background: #fffbeb; color: #b45309; }
+            .tc-log-lvl-error { background: #fef2f2; color: #dc2626; }
+            .tc-log-lvl-debug { background: #f1f5f9; color: #475569; }
+
+            /* Message */
+            .tc-log-msg { color: #0f172a; flex: 1; word-break: break-word; line-height: 1.5; }
+
+            /* Expanded Details — Light Code Block */
+            .tc-log-details { display: none; background: #f8fafc; color: #1e293b; padding: 14px 18px; margin: 0 16px 8px 16px; border-radius: 8px; overflow-x: auto; font-family: \'SF Mono\', SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.7; border: 1px solid #e2e8f0; white-space: pre-wrap; word-break: break-all; }
+            .tc-log-line.active + .tc-log-details { display: block; border-left: 3px solid #3b82f6; }
+
+            /* Expand Arrow */
+            .tc-log-arrow { font-size: 10px; color: #94a3b8; transition: transform 0.2s ease; align-self: center; flex-shrink: 0; }
+            .tc-log-line.active .tc-log-arrow { transform: rotate(180deg); color: #3b82f6; }
             
             /* Mobile Responsiveness */
-            .tc-table-wrapper { width: 100%; overflow-x: auto; border: 1px solid #ccd0d4; margin-top: 15px; }
-            .tc-table-wrapper table { border: none; margin-top: 0 !important; }
+            .tc-table-wrapper { width: 100%; overflow-x: auto; border: 1px solid #ccd0d4; margin-top: 15px; -webkit-overflow-scrolling: touch; }
+            .tc-table-wrapper table { border: none; margin-top: 0 !important; min-width: 900px; }
+            .tc-table-wrapper table.wp-list-table th, 
+            .tc-table-wrapper table.wp-list-table td { display: table-cell !important; }
             
             @media (max-width: 900px) {
                 .tc-analytics-grid { grid-template-columns: 1fr !important; }
@@ -240,21 +264,51 @@ class Topup_Central_Admin {
                                     let cls = 'tc-server-online';
                                     let lbl = 'ONLINE';
                                     let col = '#00a32a';
-                                    if (s.status === 'dead') { cls = 'tc-server-dead'; lbl = 'DEAD'; col = '#d63638'; }
-                                    else if (s.status === 'stale') { cls = 'tc-server-stale'; lbl = 'STALE'; col = '#dba617'; }
+                                    let borderCol = '#a6eebb';
+                                    let bgCol = '#edfaef';
+                                    if (s.status === 'dead') { 
+                                        cls = 'tc-server-dead'; lbl = 'DEAD'; col = '#d63638'; borderCol = '#f8c8c8'; bgCol = '#fcf0f1';
+                                    } else if (s.status === 'stale') { 
+                                        cls = 'tc-server-stale'; lbl = 'STALE'; col = '#dba617'; borderCol = '#f6dda3'; bgCol = '#fdf8ea';
+                                    }
                                     
                                     const nicknameText = s.nickname ? ` (<span style="color:#2271b1;font-weight:bold;">${s.nickname}</span>)` : '';
+                                    
+                                    // Make stats human-readable
+                                    const stats = s.stats || { lifetime_success: 0, lifetime_failed: 0, lifetime_avg_time: 0, lasthour_success: 0, lasthour_avg_time: 0 };
+                                    const lfDone = parseInt(stats.lifetime_success) || 0;
+                                    const lfFail = parseInt(stats.lifetime_failed) || 0;
+                                    const lfTotal = lfDone + lfFail;
+                                    const sr = lfTotal > 0 ? Math.round((lfDone / lfTotal) * 100) : 0;
+                                    const srCol = sr > 90 ? '#00a32a' : (sr > 70 ? '#dba617' : '#d63638');
+                                    const lfAvg = stats.lifetime_avg_time ? parseFloat(stats.lifetime_avg_time).toFixed(1) + 's' : 'N/A';
+                                    const lhDone = parseInt(stats.lasthour_success) || 0;
+                                    const lhAvg = stats.lasthour_avg_time ? parseFloat(stats.lasthour_avg_time).toFixed(1) + 's' : 'N/A';
+                                    const hrbHuman = s.last_heartbeat_human || s.last_heartbeat;
+                                    const activeWorkers = s.active_workers || 0;
+
                                     serverHtml += `
-                                        <div style="border:1px solid #eee; border-radius:4px; padding:10px;" class="${cls}">
-                                            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                                                <strong style="font-size:13px; cursor:pointer;" class="tc-server-rename" data-id="${s.server_id}" data-nick="${s.nickname || ''}" title="Click to rename">${s.server_id}${nicknameText} ✏️</strong>
-                                                <span style="font-size:11px; font-weight:bold; color:${col};">${lbl}</span>
+                                        <div style="border:1px solid #dcdcde; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-radius:6px; padding:12px; display:flex; flex-direction:column; gap:10px; background:#fff;" class="${cls}">
+                                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f1; padding-bottom:8px;">
+                                                <strong style="font-size:14px; cursor:pointer; color:#1d2327;" class="tc-server-rename" data-id="${s.server_id}" data-nick="${s.nickname || ''}" title="Click to rename">🖥️ ${s.server_id}${nicknameText} ✏️</strong>
+                                                <span style="font-size:11px; font-weight:700; color:${col}; background: ${bgCol}; padding: 3px 8px; border-radius: 12px; border: 1px solid ${borderCol}; display:flex; align-items:center; gap:4px;">
+                                                    <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${col};"></span>${lbl}
+                                                </span>
                                             </div>
-                                            <div style="font-size:12px; color:#646970;">
-                                                <div>IP: ${s.ip_address || 'N/A'}</div>
-                                                <div>Uptime: ${s.uptime_formatted}</div>
-                                                <div>Active Tasks: <strong>${activeCount}</strong></div>
-                                                <div style="font-size:10px; margin-top:5px;">Last HRB: ${s.last_heartbeat}</div>
+                                            <div style="display:grid; grid-template-columns: 1fr 1fr; font-size:12px; color:#50575e; gap: 6px;">
+                                                <div>🌐 <strong>IP:</strong> ${s.ip_address || 'N/A'}</div>
+                                                <div>⏱️ <strong>Uptime:</strong> ${s.uptime_formatted}</div>
+                                                <div title="${s.last_heartbeat}">💓 <strong>Last seen:</strong> ${hrbHuman}</div>
+                                                <div>⚙️ <strong>Workers:</strong> <strong style="color:#2271b1">${activeWorkers}</strong> active</div>
+                                            </div>
+                                            <div style="background:#f6f7f7; border-radius:4px; padding:8px; display:grid; grid-template-columns: 1fr 1fr; font-size:11px; color:#50575e; gap: 6px;">
+                                                <div title="Last 60 minutes">⏳ <strong>Last Hr:</strong> ${lhDone} complete</div>
+                                                <div>⏱️ <strong>Last Hr Avg:</strong> ${lhAvg}</div>
+                                                <div title="Total Processed">✅ <strong>Lifetime:</strong> ${lfDone} done | ❌ ${lfFail} fail</div>
+                                                <div>
+                                                    ⏱️ <strong>Life Avg:</strong> ${lfAvg} 
+                                                    <span style="float:right; color:${srCol}; font-weight:bold;" title="Success Rate">🎯 ${sr}%</span>
+                                                </div>
                                             </div>
                                         </div>
                                     `;
@@ -303,7 +357,7 @@ class Topup_Central_Admin {
                                             <td style="font-size:11px; color:#646970;" title="${f.locked_by || ''}">${serverDisplay}</td>
                                             <td style="font-size:12px; font-weight:600;">${durationStr}</td>
                                             <td><span class="tc-badge ${f.status}">${f.status}</span></td>
-                                            <td><button class="button button-small btn-log" data-id="${f.order_id}" title="View Order Log">Log</button></td>
+                                            <td><button class="button button-small btn-log" data-id="${f.order_id}" data-voucher="${f.voucher_code || ''}" title="View Order Log">Log</button></td>
                                         </tr>
                                     `;
                                 });
@@ -344,6 +398,7 @@ class Topup_Central_Admin {
                 // Shared Log Viewer Logic
                 $(document).on('click', '.btn-log', function() {
                     const id = $(this).data('id');
+                    const voucher = $(this).data('voucher') || '';
                     const modal = $('#tc-log-modal');
                     const content = $('#tc-log-content');
                     
@@ -351,24 +406,32 @@ class Topup_Central_Admin {
                     content.html('Loading log data...');
                     modal.css('display', 'flex');
                     
-                    $.post(ajaxurl, { action: 'topup_get_order_log', order_id: id }, function(res) {
+                    $.post(ajaxurl, { action: 'topup_get_order_log', order_id: id, voucher_code: voucher }, function(res) {
                         if(res.success && res.data) {
                             try {
                                 const logData = res.data;
                                 let out = `<div style="color:#a5a5a5; margin-bottom:15px;">Target: ${logData.order_data?.player_id || 'UID N/A'} | Created: ${logData.created_at}</div>`;
                                 
                                 if (logData.logs && logData.logs.length > 0) {
-                                    logData.logs.forEach(l => {
+                                    logData.logs.forEach((l, index) => {
                                         const lvlStr = (l.level || 'INFO').toLowerCase();
                                         const timeStr = l.timestamp ? l.timestamp.replace('T', ' ').substring(0, 19) : '';
-                                        out += `<div class="tc-log-line">
-                                            <span class="tc-log-time">[${timeStr}]</span> 
-                                            <span class="tc-log-lvl-${lvlStr}">[${lvlStr.toUpperCase()}]</span> 
-                                            ${l.message}
+                                        const hasData = l.data && Object.keys(l.data).length > 0;
+                                        
+                                        out += `<div class="tc-log-line ${hasData ? 'has-data' : ''}" data-index="${index}">
+                                            <span class="tc-log-time">${timeStr}</span> 
+                                            <span class="tc-log-lvl tc-log-lvl-${lvlStr}">${lvlStr}</span> 
+                                            <span class="tc-log-msg">${l.message}</span>
+                                            ${hasData ? '<span class="tc-log-arrow">▼</span>' : ''}
                                         </div>`;
+                                        
+                                        if (hasData) {
+                                            const prettyData = JSON.stringify(l.data, null, 2);
+                                            out += `<div class="tc-log-details" id="log-details-${index}">${prettyData}</div>`;
+                                        }
                                     });
                                 } else {
-                                    out += '<div style="color:#808080;">No log entries found.</div>';
+                                    out += '<div style="color:#64748b; padding:20px; text-align:center;">No log entries found.</div>';
                                 }
                                 content.html(out);
                             } catch (e) {
@@ -382,6 +445,10 @@ class Topup_Central_Admin {
 
                 $(document).on('click', '#tc-log-close', function() {
                     $('#tc-log-modal').hide();
+                });
+
+                $(document).on('click', '.tc-log-line.has-data', function() {
+                    $(this).toggleClass('active');
                 });
             });
         </script>
@@ -587,7 +654,7 @@ class Topup_Central_Admin {
                                             <td><span class="tc-badge ${o.status}">${o.status}</span></td>
                                             <td>
                                                 <button class="button button-small btn-view" data-id="${o.order_id}">View Vouchers</button>
-                                                <button class="button button-small btn-log" data-id="${o.order_id}" style="margin-left:4px;">View Log</button>
+                                                <button class="button button-small btn-log" data-id="${o.order_id}" data-voucher="" style="margin-left:4px;">View Log</button>
                                                 <button class="button button-small btn-delete" data-id="${o.order_id}" style="color:#d63638; border-color:#d63638; margin-left:4px;">Delete</button>
                                             </td>
                                         </tr>
@@ -828,6 +895,28 @@ class Topup_Central_Admin {
             $val = esc_attr( get_option( 'topup_central_api_key', 'CHANGE_ME_IN_ADMIN_PANEL' ) );
             echo "<input type='text' id='api_key' name='topup_central_api_key' value='{$val}' size='50' autocomplete='off' />";
         }, 'topup-central-admin', 'topup_central_setting_section' );
+
+        // Auto-Scaling Configuration
+        register_setting( 'topup_central_option_group', 'topup_min_workers', array('type' => 'integer', 'default' => 1) );
+        register_setting( 'topup_central_option_group', 'topup_max_workers', array('type' => 'integer', 'default' => 8) );
+        register_setting( 'topup_central_option_group', 'topup_scale_threshold', array('type' => 'integer', 'default' => 5) );
+
+        add_settings_section( 'topup_central_scaling_section', 'Auto-Scaling Configuration', function(){ echo 'Configure how the Node.js worker pools automatically scale based on the pending queue size.'; }, 'topup-central-admin' );
+        
+        add_settings_field( 'min_workers', 'Minimum Workers per Server', function(){
+            $val = intval( get_option( 'topup_min_workers', 1 ) );
+            echo "<input type='number' min='1' id='topup_min_workers' name='topup_min_workers' value='{$val}' style='width: 80px;' /> <span class='description'>Always keep at least this many running.</span>";
+        }, 'topup-central-admin', 'topup_central_scaling_section' );
+
+        add_settings_field( 'max_workers', 'Maximum Workers per Server', function(){
+            $val = intval( get_option( 'topup_max_workers', 8 ) );
+            echo "<input type='number' min='1' id='topup_max_workers' name='topup_max_workers' value='{$val}' style='width: 80px;' /> <span class='description'>Never exceed this, even under heavy load.</span>";
+        }, 'topup-central-admin', 'topup_central_scaling_section' );
+
+        add_settings_field( 'scale_threshold', 'Scale-Up Threshold', function(){
+            $val = intval( get_option( 'topup_scale_threshold', 5 ) );
+            echo "<input type='number' min='1' id='topup_scale_threshold' name='topup_scale_threshold' value='{$val}' style='width: 80px;' /> <span class='description'>Spawn a new worker when (pending vouchers ÷ active workers) > this value.</span>";
+        }, 'topup-central-admin', 'topup_central_scaling_section' );
     }
 
     // ------------------------------------------------------------------
@@ -852,15 +941,52 @@ class Topup_Central_Admin {
         }
 
         // Servers
-        $servers = $wpdb->get_results( "SELECT * FROM $ts ORDER BY last_heartbeat DESC", ARRAY_A );
+        $now_utc = current_time('mysql', 1);
+        $server_stats = $wpdb->get_results( $wpdb->prepare(
+            "SELECT locked_by as server_id,
+                    SUM(CASE WHEN status IN ('completed', 'consumed') THEN 1 ELSE 0 END) as lifetime_success,
+                    SUM(CASE WHEN status IN ('failed', 'invalid_id') THEN 1 ELSE 0 END) as lifetime_failed,
+                    AVG(CASE WHEN status = 'completed' AND processing_started_at IS NOT NULL AND completed_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, processing_started_at, completed_at) ELSE NULL END) as lifetime_avg_time,
+                    SUM(CASE WHEN status IN ('completed', 'consumed') AND completed_at >= DATE_SUB(%s, INTERVAL 1 HOUR) THEN 1 ELSE 0 END) as lasthour_success,
+                    AVG(CASE WHEN status = 'completed' AND completed_at >= DATE_SUB(%s, INTERVAL 1 HOUR) AND processing_started_at IS NOT NULL AND completed_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, processing_started_at, completed_at) ELSE NULL END) as lasthour_avg_time
+             FROM $tv
+             WHERE locked_by IS NOT NULL AND locked_by != ''
+             GROUP BY locked_by",
+            $now_utc, $now_utc
+        ), ARRAY_A );
+        
+        $stats_map = array();
+        if ( $server_stats ) {
+            foreach ( $server_stats as $st ) {
+                $stats_map[ $st['server_id'] ] = $st;
+            }
+        }
+
+        $servers = $wpdb->get_results( "SELECT * FROM $ts ORDER BY server_id ASC", ARRAY_A );
         $now_ts  = current_time( 'timestamp' );
         foreach ( $servers as &$srv ) {
+            $sid = $srv['server_id'];
             $srv['nickname'] = sanitize_text_field( $srv['nickname'] ?? '' );
             $srv['uptime_formatted'] = gmdate( 'H:i:s', (int) $srv['uptime_seconds'] );
-            $stale = strtotime( $srv['last_heartbeat'] ) < ( $now_ts - 300 );
+            
+            $diff_sec = $now_ts - strtotime( $srv['last_heartbeat'] );
+            if ( $diff_sec < 60 ) {
+                $srv['last_heartbeat_human'] = max(0, $diff_sec) . ' seconds ago';
+            } elseif ( $diff_sec < 3600 ) {
+                $srv['last_heartbeat_human'] = floor( $diff_sec / 60 ) . ' minutes ago';
+            } else {
+                $srv['last_heartbeat_human'] = floor( $diff_sec / 3600 ) . ' hours ago';
+            }
+
+            $stale = $diff_sec > 300;
             if ( ! $srv['is_active'] )  $srv['status'] = 'dead';
             elseif ( $stale )           $srv['status'] = 'stale';
             else                        $srv['status'] = 'online';
+
+            $srv['stats'] = $stats_map[ $sid ] ?? array(
+                'lifetime_success' => 0, 'lifetime_failed' => 0, 
+                'lifetime_avg_time' => 0, 'lasthour_success' => 0, 'lasthour_avg_time' => 0
+            );
         }
 
         // Recent activity feed (last 20 vouchers touched)
@@ -985,20 +1111,47 @@ class Topup_Central_Admin {
     public function ajax_get_order_log() {
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error();
         
-        $order_id = sanitize_text_field( $_POST['order_id'] ?? '' );
+        $order_id     = sanitize_text_field( $_POST['order_id'] ?? '' );
+        $voucher_code = sanitize_text_field( $_POST['voucher_code'] ?? '' );
+
         if ( empty( $order_id ) ) wp_send_json_error( array( 'message' => 'Missing Order ID.' ) );
         
         $upload_dir = wp_upload_dir();
-        $log_file = $upload_dir['basedir'] . '/orders/log_' . $order_id . '.json';
+        $orders_dir = $upload_dir['basedir'] . '/orders';
+        $log_file   = null;
 
-        // Fallback to local Logs path (legacy or same-server setup)
-        if ( ! file_exists( $log_file ) ) {
+        // 1. Try Voucher-specific log in Uploads
+        if ( ! empty( $voucher_code ) ) {
+            $path = $orders_dir . '/log_' . $order_id . '_' . $voucher_code . '.json';
+            if ( file_exists( $path ) ) $log_file = $path;
+        }
+
+        // 2. Try Order-wide log in Uploads (fallback)
+        if ( ! $log_file ) {
+            $path = $orders_dir . '/log_' . $order_id . '.json';
+            if ( file_exists( $path ) ) $log_file = $path;
+        }
+
+        // 3. Fallback to local 'Logs' path option (legacy)
+        if ( ! $log_file ) {
             $legacy_dir = get_option( 'topup_nodejs_log_path', dirname( ABSPATH, 2 ) . '/Logs' );
-            $log_file = rtrim( $legacy_dir, '/\\' ) . '/' . $order_id . '.json';
+            if ( $legacy_dir ) {
+                $dir = rtrim( $legacy_dir, '/\\' );
+                // Try voucher log first in legacy
+                if ( ! empty( $voucher_code ) ) {
+                    $path = $dir . '/' . $order_id . '_' . $voucher_code . '.json';
+                    if ( file_exists( $path ) ) $log_file = $path;
+                }
+                // Try order log next in legacy
+                if ( ! $log_file ) {
+                    $path = $dir . '/' . $order_id . '.json';
+                    if ( file_exists( $path ) ) $log_file = $path;
+                }
+            }
         }
         
-        if ( ! file_exists( $log_file ) ) {
-            wp_send_json_error( array( 'message' => "Log file not found. Checked uploads/orders/ and local Logs/ folder." ) );
+        if ( ! $log_file || ! file_exists( $log_file ) ) {
+            wp_send_json_error( array( 'message' => "Log file not found. Checked voucher and order logs for Order $order_id." ) );
         }
         
         $json_data = file_get_contents( $log_file );

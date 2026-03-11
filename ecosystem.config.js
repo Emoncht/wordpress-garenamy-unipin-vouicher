@@ -12,7 +12,7 @@ module.exports = {
 			env: {
 				NODE_ENV: 'production',
 				PORT: 4000,
-				BROWSER_CONCURRENCY: '5',
+				MAX_WORKERS: '8',
 				NODE_OPTIONS: '--max-old-space-size=512'
 			}
 		},

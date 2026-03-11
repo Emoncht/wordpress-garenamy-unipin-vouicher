@@ -43,7 +43,8 @@ async function performHeartbeat() {
         label: `Node.js Worker [${require('os').hostname()}]`,
         active_voucher_ids: activeIds,
         rate_limit_active: rateLimitActive,
-        uptime_seconds: process.uptime()
+        uptime_seconds: process.uptime(),
+        active_workers: state.getActiveWorkerCount()
     };
 
     try {
@@ -65,6 +66,14 @@ async function performHeartbeat() {
             // Sync other configs later (e.g., batch sizing, delay MS)
             if (response.config.min_delay_ms) {
                 state.setWorkerDelay(response.config.min_delay_ms);
+            }
+
+            if (response.config.scaling) {
+                state.setScalingConfig({
+                    minWorkers: response.config.scaling.min_workers,
+                    maxWorkers: response.config.scaling.max_workers,
+                    scaleThreshold: response.config.scaling.scale_threshold
+                });
             }
         }
     } catch (error) {
